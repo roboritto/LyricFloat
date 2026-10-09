@@ -34,6 +34,8 @@ import java.net.URL
 import java.net.URLEncoder
 import android.annotation.SuppressLint
 import android.widget.RemoteViews
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 
 class FloatingLyricsService : Service() {
 
@@ -80,6 +82,12 @@ class FloatingLyricsService : Service() {
                     startSyncTimer()
                 }
             }
+        }
+    }
+
+    private val colorReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            applyCustomColors()
         }
     }
 
@@ -204,6 +212,17 @@ class FloatingLyricsService : Service() {
                 ContextCompat.RECEIVER_NOT_EXPORTED
             )
 
+            val colorFilter = IntentFilter("UPDATE_COLORS")
+            ContextCompat.registerReceiver(
+                this,
+                colorReceiver,
+                colorFilter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+
+            // Apply colors instantly upon creation
+            applyCustomColors()
+
             // Delayed query to ensure receiver is ready
             Handler(Looper.getMainLooper()).postDelayed({
                 val requestIntent = Intent("REQUEST_CURRENT_TRACK")
@@ -225,10 +244,8 @@ class FloatingLyricsService : Service() {
         notificationManager.cancel(NOTIFICATION_ID) // Clear lock screen notification
 
         try {
-            unregisterReceiver(lyricsReceiver)
-        } catch (e: Exception) {
-            // Ignore
-        }
+            unregisterReceiver(colorReceiver)
+        } catch (e: Exception) { }
 
         if (::floatingView.isInitialized) {
             windowManager.removeView(floatingView)
@@ -372,5 +389,42 @@ class FloatingLyricsService : Service() {
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun applyCustomColors() {
+        if (!::floatingView.isInitialized) return
+
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val bgColor = prefs.getString("bg_color", "#FF000000") ?: "#FF000000"
+        val textColor = prefs.getString("text_color", "#FFFFFFFF") ?: "#FFFFFFFF"
+
+        try {
+            val parsedBgColor = Color.parseColor(bgColor)
+            val parsedTextColor = Color.parseColor(textColor)
+
+            // Create a 50% transparent version of the text color for the prev/next lines
+            val semiTransparentTextColor = Color.argb(
+                128,
+                Color.red(parsedTextColor),
+                Color.green(parsedTextColor),
+                Color.blue(parsedTextColor)
+            )
+
+            // 1. Rebuild the rounded background with the new color
+            val backgroundShape = GradientDrawable()
+            backgroundShape.shape = GradientDrawable.RECTANGLE
+            backgroundShape.cornerRadius = 32f // Keeps the rounded corners
+            backgroundShape.setColor(parsedBgColor)
+
+            floatingView.findViewById<View>(R.id.lyrics_container).background = backgroundShape
+
+            // 2. Apply the text colors
+            floatingView.findViewById<TextView>(R.id.tv_current_lyric).setTextColor(parsedTextColor)
+            floatingView.findViewById<TextView>(R.id.tv_previous_lyric).setTextColor(semiTransparentTextColor)
+            floatingView.findViewById<TextView>(R.id.tv_next_lyric).setTextColor(semiTransparentTextColor)
+
+        } catch (e: Exception) {
+            // Failsafe in case of a crash during parsing, defaults will remain
+        }
     }
 }

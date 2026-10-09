@@ -9,14 +9,144 @@
         android:id="@+id/btn_start_service"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Start Dynamic Lyrics" />
+        android:text="Start" />
 
-    <!-- ADD THIS NEW BUTTON -->
     <Button
         android:id="@+id/btn_notification_access"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="1. Grant Notification Access" />
+        android:text="Grant Notification Access" />
+
+    <!-- Color Customization Section -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Background Color (Hex):"
+        android:layout_marginTop="24dp"/>
+
+    <EditText
+        android:id="@+id/et_bg_color"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="#FF000000"
+        android:inputType="textCapCharacters" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Text Color (Hex):"
+        android:layout_marginTop="16dp"/>
+
+    <EditText
+        android:id="@+id/et_text_color"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="#FFFFFFFF"
+        android:inputType="textCapCharacters" />
+
+    <Button
+        android:id="@+id/btn_save_colors"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Apply Colors"
+        android:layout_marginTop="16dp"/>
+
+    <!-- Live Preview Section -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Live Preview:"
+        android:layout_marginTop="24dp"
+        android:textStyle="bold"/>
+
+    <LinearLayout
+        android:id="@+id/preview_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="16dp"
+        android:background="#FF000000">
+
+        <TextView
+            android:id="@+id/preview_prev"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="This is the previous line"
+            android:textColor="#88FFFFFF"
+            android:textSize="12sp"
+            android:paddingBottom="4dp"/>
+
+        <TextView
+            android:id="@+id/preview_current"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="This is the current singing line"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/preview_next"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="This is the next line"
+            android:textColor="#88FFFFFF"
+            android:textSize="12sp"
+            android:paddingTop="4dp"/>
+    </LinearLayout>
+
+    <!-- Transparency Slider -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Background Transparency:" />
+
+    <SeekBar
+        android:id="@+id/seek_transparency"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="16dp"
+        android:max="255"
+        android:progress="255" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Preset Themes:"
+        android:layout_marginTop="24dp"
+        android:textStyle="bold"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <Button
+            android:id="@+id/btn_theme_dark"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Dark" />
+
+        <Button
+            android:id="@+id/btn_theme_light"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Light" />
+
+        <Button
+            android:id="@+id/btn_theme_green"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Green" />
+    </LinearLayout>
 
 </LinearLayout>
