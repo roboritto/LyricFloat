@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="screenshots/1.png" width="150" title="Dynamic Lyrics Logo">
+</p>
 # Dynamic Lyrics
 
 An Android app that displays real-time, time-synced lyrics in a floating window over active music apps, and seamlessly pushes an undismissable custom lyrics card directly to the lock screen. 
