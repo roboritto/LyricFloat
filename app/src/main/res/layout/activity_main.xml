@@ -5,11 +5,15 @@
     android:gravity="center"
     android:orientation="vertical">
 
-    <Button
-        android:id="@+id/btn_start_service"
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_start_service"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Start" />
+        android:text="Enable Dynamic Lyrics"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_gravity="center"
+        android:layout_margin="16dp" />
 
     <Button
         android:id="@+id/btn_notification_access"
