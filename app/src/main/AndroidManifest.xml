@@ -47,8 +47,8 @@
 
         <service
             android:name=".LyricsTileService"
-            android:label="Dynamic Lyrics"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@drawable/unicorn"
+            android:label="Lyric Float"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>
