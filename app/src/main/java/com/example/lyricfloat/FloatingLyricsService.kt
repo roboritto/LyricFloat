@@ -44,11 +44,13 @@ class FloatingLyricsService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var floatingView: View
+    private lateinit var floatingParams: WindowManager.LayoutParams
     private lateinit var notificationManager: NotificationManager
 
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "lyrics_lock_screen_channel_V2"
     private var currentLyricIndex = -1
+    private var isFloatingViewAttached = false
 
     private var parsedLyrics = listOf<LyricLine>()
     private var syncJob: Job? = null
@@ -58,7 +60,6 @@ class FloatingLyricsService : Service() {
     private var lastUpdateTime = 0L
     private var currentTrackName = ""
 
-    // The Provider Chain
     private val lyricsSources: List<LyricsProvider> = listOf(
         LrcLibProvider(),
         UnisonProvider(),
@@ -74,17 +75,27 @@ class FloatingLyricsService : Service() {
             isMusicPlaying = intent?.getBooleanExtra("is_playing", false) ?: false
             lastUpdateTime = System.currentTimeMillis()
 
-            if (trackName != null && ::floatingView.isInitialized) {
+            if (trackName != null) {
                 if (trackName != currentTrackName) {
                     currentTrackName = trackName
                     syncJob?.cancel()
                     parsedLyrics = emptyList()
-                    currentLyricIndex = -1
+
+                    // CHANGE THIS from -1 to -2
+                    currentLyricIndex = -2
+
+                    setStatusText("Searching: $trackName...")
                     fetchLyrics(trackName, artistName ?: "")
                 } else {
                     startSyncTimer()
                 }
             }
+        }
+    }
+
+    private val displayPrefsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            applyDisplayPreferences()
         }
     }
 
@@ -94,139 +105,124 @@ class FloatingLyricsService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Lock Screen Lyrics",
-            NotificationManager.IMPORTANCE_DEFAULT
-        )
-        channel.setSound(null, null)
-        channel.enableVibration(false)
+        val channel = NotificationChannel(CHANNEL_ID, "Lock Screen Lyrics", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            setSound(null, null)
+            enableVibration(false)
+        }
         notificationManager.createNotificationChannel(channel)
 
-        val initialNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Dynamic Lyrics Active")
-            .setContentText("Waiting for music...")
-            .setOngoing(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
-
-        startForeground(NOTIFICATION_ID, initialNotification)
-
+        startForeground(NOTIFICATION_ID, buildNotification("", "Waiting for music...", ""))
         isRunning = true
         requestTileUpdate()
 
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-
             floatingView = inflater.inflate(R.layout.layout_floating_lyrics, null)
 
-            val widthInPx = (300 * resources.displayMetrics.density).toInt()
-
-            val params = WindowManager.LayoutParams(
-                widthInPx,
+            floatingParams = WindowManager.LayoutParams(
+                (300 * resources.displayMetrics.density).toInt(),
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
-            )
-
-            params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            params.x = 0
-            params.y = 0
-
-            windowManager.addView(floatingView, params)
-
-            var initialX = 0
-            var initialY = 0
-            var initialTouchX = 0f
-            var initialTouchY = 0f
-
-            var tapCount = 0
-            var lastTapTime = 0L
-            val TAP_TIMEOUT = 350L
-            val TOUCH_SLOP = 10f
-
-            floatingView.findViewById<View>(R.id.lyrics_container).setOnTouchListener { _, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
-                        initialY = params.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager.updateViewLayout(floatingView, params)
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        val dx = Math.abs(event.rawX - initialTouchX)
-                        val dy = Math.abs(event.rawY - initialTouchY)
-
-                        if (dx < TOUCH_SLOP && dy < TOUCH_SLOP) {
-                            val currentTime = System.currentTimeMillis()
-
-                            if (currentTime - lastTapTime < TAP_TIMEOUT) {
-                                tapCount++
-                            } else {
-                                tapCount = 1
-                            }
-                            lastTapTime = currentTime
-
-                            if (tapCount == 2) {
-                                params.x = 0
-                                params.y = 0
-                                windowManager.updateViewLayout(floatingView, params)
-                                Toast.makeText(this@FloatingLyricsService, "Position reset", Toast.LENGTH_SHORT).show()
-                            } else if (tapCount == 3) {
-                                Toast.makeText(this@FloatingLyricsService, "Lyrics closed", Toast.LENGTH_SHORT).show()
-                                stopSelf()
-                            }
-                        }
-                        true
-                    }
-                    else -> false
-                }
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                x = 0
+                y = 0
             }
 
-            val filter = IntentFilter("UPDATE_LYRICS")
-            ContextCompat.registerReceiver(
-                this,
-                lyricsReceiver,
-                filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-
-            val colorFilter = IntentFilter("UPDATE_COLORS")
-            ContextCompat.registerReceiver(
-                this,
-                colorReceiver,
-                colorFilter,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-
+            setupGestureControls()
+            applyDisplayPreferences() // Attaches view if prefs allow
             applyCustomColors()
 
+            ContextCompat.registerReceiver(this, lyricsReceiver, IntentFilter("UPDATE_LYRICS"), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(this, colorReceiver, IntentFilter("UPDATE_COLORS"), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(this, displayPrefsReceiver, IntentFilter("UPDATE_DISPLAY_PREFS"), ContextCompat.RECEIVER_NOT_EXPORTED)
+
             Handler(Looper.getMainLooper()).postDelayed({
-                val requestIntent = Intent("REQUEST_CURRENT_TRACK")
-                requestIntent.setPackage(packageName)
-                sendBroadcast(requestIntent)
+                sendBroadcast(Intent("REQUEST_CURRENT_TRACK").apply { setPackage(packageName) })
             }, 300)
 
         } catch (e: Exception) {
             Toast.makeText(this, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun applyDisplayPreferences() {
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val showFloating = prefs.getBoolean("pref_floating_box", true)
+
+        if (showFloating && !isFloatingViewAttached) {
+            try {
+                windowManager.addView(floatingView, floatingParams)
+                isFloatingViewAttached = true
+            } catch (e: Exception) {}
+        } else if (!showFloating && isFloatingViewAttached) {
+            try {
+                windowManager.removeView(floatingView)
+                isFloatingViewAttached = false
+            } catch (e: Exception) {}
+        }
+
+        // Force a notification refresh to apply new visibility/content rules immediately
+        if (parsedLyrics.isNotEmpty() && currentLyricIndex in parsedLyrics.indices) {
+            val prev = if (currentLyricIndex > 0) parsedLyrics[currentLyricIndex - 1].text else ""
+            val curr = parsedLyrics[currentLyricIndex].text
+            val next = if (currentLyricIndex < parsedLyrics.size - 1) parsedLyrics[currentLyricIndex + 1].text else ""
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(prev, curr, next))
+        }
+    }
+
+    private fun setupGestureControls() {
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var tapCount = 0
+        var lastTapTime = 0L
+
+        floatingView.findViewById<View>(R.id.lyrics_container).setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = floatingParams.x
+                    initialY = floatingParams.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    floatingParams.x = initialX + (event.rawX - initialTouchX).toInt()
+                    floatingParams.y = initialY + (event.rawY - initialTouchY).toInt()
+                    if (isFloatingViewAttached) windowManager.updateViewLayout(floatingView, floatingParams)
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (Math.abs(event.rawX - initialTouchX) < 10f && Math.abs(event.rawY - initialTouchY) < 10f) {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastTapTime < 350L) tapCount++ else tapCount = 1
+                        lastTapTime = currentTime
+
+                        if (tapCount == 2) {
+                            floatingParams.x = 0
+                            floatingParams.y = 0
+                            if (isFloatingViewAttached) windowManager.updateViewLayout(floatingView, floatingParams)
+                            Toast.makeText(this@FloatingLyricsService, "Position reset", Toast.LENGTH_SHORT).show()
+                        } else if (tapCount == 3) {
+                            Toast.makeText(this@FloatingLyricsService, "Lyrics closed", Toast.LENGTH_SHORT).show()
+                            stopSelf()
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -236,48 +232,35 @@ class FloatingLyricsService : Service() {
         requestTileUpdate()
         syncJob?.cancel()
         notificationManager.cancel(NOTIFICATION_ID)
-
         try {
             unregisterReceiver(colorReceiver)
             unregisterReceiver(lyricsReceiver)
+            unregisterReceiver(displayPrefsReceiver)
         } catch (e: Exception) { }
-
-        if (::floatingView.isInitialized) {
+        if (isFloatingViewAttached) {
             windowManager.removeView(floatingView)
         }
     }
 
     private fun requestTileUpdate() {
-        try {
-            TileService.requestListeningState(
-                this,
-                ComponentName(this, LyricsTileService::class.java)
-            )
-        } catch (e: Exception) {
-            // Ignore
-        }
+        try { TileService.requestListeningState(this, ComponentName(this, LyricsTileService::class.java)) } catch (e: Exception) { }
     }
 
     private fun setStatusText(message: String) {
-        if (::floatingView.isInitialized) {
+        if (isFloatingViewAttached) {
             floatingView.findViewById<TextView>(R.id.tv_previous_lyric).text = ""
             floatingView.findViewById<TextView>(R.id.tv_current_lyric).text = message
             floatingView.findViewById<TextView>(R.id.tv_next_lyric).text = ""
         }
+        notificationManager.notify(NOTIFICATION_ID, buildNotification("", message, ""))
     }
 
     private suspend fun getBestLyrics(trackName: String, artistName: String, onProgress: suspend (String) -> Unit): String? {
         return withContext(Dispatchers.IO) {
             for (provider in lyricsSources) {
-                // Switch to Main thread to safely update the UI text
-                withContext(Dispatchers.Main) {
-                    onProgress(provider.name)
-                }
-
+                withContext(Dispatchers.Main) { onProgress(provider.name) }
                 val lyrics = provider.fetchLyrics(trackName, artistName)
-                if (!lyrics.isNullOrBlank()) {
-                    return@withContext lyrics
-                }
+                if (!lyrics.isNullOrBlank()) return@withContext lyrics
             }
             return@withContext null
         }
@@ -286,11 +269,7 @@ class FloatingLyricsService : Service() {
     private fun fetchLyrics(title: String, artist: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Pass the lambda to update UI dynamically
-                val finalLyrics = getBestLyrics(title, artist) { providerName ->
-                    setStatusText("Searching $providerName...")
-                }
-
+                val finalLyrics = getBestLyrics(title, artist) { providerName -> setStatusText("Searching $providerName...") }
                 if (!finalLyrics.isNullOrEmpty()) {
                     if (finalLyrics.contains("[00:")) {
                         val parsed = parseLrc(finalLyrics)
@@ -322,7 +301,6 @@ class FloatingLyricsService : Service() {
     private fun parseLrc(lrc: String): List<LyricLine> {
         val lines = mutableListOf<LyricLine>()
         val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})\\](.*)")
-
         lrc.lines().forEach { line ->
             val match = regex.find(line)
             if (match != null) {
@@ -330,13 +308,8 @@ class FloatingLyricsService : Service() {
                 val sec = match.groupValues[2].toLong()
                 val milStr = match.groupValues[3]
                 val mil = if (milStr.length == 2) milStr.toLong() * 10 else milStr.toLong()
-
-                val timeInMs = (min * 60 * 1000) + (sec * 1000) + mil
                 val text = match.groupValues[4].trim()
-
-                if (text.isNotEmpty()) {
-                    lines.add(LyricLine(timeInMs, text))
-                }
+                if (text.isNotEmpty()) lines.add(LyricLine((min * 60 * 1000) + (sec * 1000) + mil, text))
             }
         }
         return lines.sortedBy { it.timeMs }
@@ -344,29 +317,44 @@ class FloatingLyricsService : Service() {
 
     private fun startSyncTimer() {
         syncJob?.cancel()
-
         if (!isMusicPlaying || parsedLyrics.isEmpty()) return
 
         syncJob = CoroutineScope(Dispatchers.Main).launch {
             while (isActive) {
-                val timePassed = System.currentTimeMillis() - lastUpdateTime
-                val estimatedPosition = currentPositionMs + timePassed
+                val estimatedPosition = currentPositionMs + (System.currentTimeMillis() - lastUpdateTime)
 
+                // This will be -1 if the song hasn't reached the first lyric yet
                 val currentIndex = parsedLyrics.indexOfLast { it.timeMs <= estimatedPosition }
 
-                if (currentIndex != -1 && ::floatingView.isInitialized) {
-                    val prevText = if (currentIndex > 0) parsedLyrics[currentIndex - 1].text else ""
-                    val currentText = parsedLyrics[currentIndex].text
-                    val nextText = if (currentIndex < parsedLyrics.size - 1) parsedLyrics[currentIndex + 1].text else ""
+                // Only update the UI if the line actually changed
+                if (currentIndex != currentLyricIndex) {
+                    currentLyricIndex = currentIndex
 
-                    floatingView.findViewById<TextView>(R.id.tv_previous_lyric).text = prevText
-                    floatingView.findViewById<TextView>(R.id.tv_current_lyric).text = currentText
-                    floatingView.findViewById<TextView>(R.id.tv_next_lyric).text = nextText
+                    val prevText: String
+                    val currentText: String
+                    val nextText: String
 
-                    if (currentIndex != currentLyricIndex) {
-                        currentLyricIndex = currentIndex
-                        updateLockScreenNotification(prevText, currentText, nextText)
+                    if (currentIndex == -1) {
+                        // STATE: Song is playing, but hasn't reached the first lyric yet
+                        prevText = ""
+                        currentText = "♫ $currentTrackName ♫" // Show the song title
+                        nextText = if (parsedLyrics.isNotEmpty()) parsedLyrics[0].text else "" // Peek at the upcoming first lyric
+                    } else {
+                        // STATE: Normal singing timeline
+                        prevText = if (currentIndex > 0) parsedLyrics[currentIndex - 1].text else ""
+                        currentText = parsedLyrics[currentIndex].text
+                        nextText = if (currentIndex < parsedLyrics.size - 1) parsedLyrics[currentIndex + 1].text else ""
                     }
+
+                    // 1. Update Floating Box
+                    if (isFloatingViewAttached) {
+                        floatingView.findViewById<TextView>(R.id.tv_previous_lyric).text = prevText
+                        floatingView.findViewById<TextView>(R.id.tv_current_lyric).text = currentText
+                        floatingView.findViewById<TextView>(R.id.tv_next_lyric).text = nextText
+                    }
+
+                    // 2. Update Lock Screen / Notification Panel
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification(prevText, currentText, nextText))
                 }
                 delay(100)
             }
@@ -374,42 +362,39 @@ class FloatingLyricsService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun updateLockScreenNotification(prev: String, current: String, next: String) {
-        val customView = RemoteViews(packageName, R.layout.layout_notification_lyrics)
+    private fun buildNotification(prev: String, current: String, next: String): android.app.Notification {
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val showCustomNotif = prefs.getBoolean("pref_notification", true)
+        val showOnLockScreen = prefs.getBoolean("pref_lock_screen", true)
 
-        customView.setTextViewText(R.id.notif_tv_prev, prev)
-        customView.setTextViewText(R.id.notif_tv_current, current)
-        customView.setTextViewText(R.id.notif_tv_next, next)
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setCustomContentView(customView)
             .setOngoing(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .build()
+            .setVisibility(if (showOnLockScreen) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_SECRET)
 
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        if (showCustomNotif) {
+            val customView = RemoteViews(packageName, R.layout.layout_notification_lyrics)
+            customView.setTextViewText(R.id.notif_tv_prev, prev)
+            customView.setTextViewText(R.id.notif_tv_current, current)
+            customView.setTextViewText(R.id.notif_tv_next, next)
+            builder.setCustomContentView(customView)
+        } else {
+            builder.setContentTitle("Dynamic Lyrics Active")
+            builder.setContentText(if (currentTrackName.isNotEmpty()) "Syncing: $currentTrackName" else "Running in background")
+        }
+
+        return builder.build()
     }
 
     private fun applyCustomColors() {
         if (!::floatingView.isInitialized) return
-
         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
-        val bgColor = prefs.getString("bg_color", "#FF000000") ?: "#FF000000"
-        val textColor = prefs.getString("text_color", "#FFFFFFFF") ?: "#FFFFFFFF"
-
         try {
-            val parsedBgColor = Color.parseColor(bgColor)
-            val parsedTextColor = Color.parseColor(textColor)
-
-            val semiTransparentTextColor = Color.argb(
-                128,
-                Color.red(parsedTextColor),
-                Color.green(parsedTextColor),
-                Color.blue(parsedTextColor)
-            )
+            val parsedBgColor = Color.parseColor(prefs.getString("bg_color", "#FF000000") ?: "#FF000000")
+            val parsedTextColor = Color.parseColor(prefs.getString("text_color", "#FFFFFFFF") ?: "#FFFFFFFF")
+            val semiTransparentTextColor = Color.argb(128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor))
 
             val backgroundShape = GradientDrawable()
             backgroundShape.shape = GradientDrawable.RECTANGLE
@@ -417,13 +402,9 @@ class FloatingLyricsService : Service() {
             backgroundShape.setColor(parsedBgColor)
 
             floatingView.findViewById<View>(R.id.lyrics_container).background = backgroundShape
-
             floatingView.findViewById<TextView>(R.id.tv_current_lyric).setTextColor(parsedTextColor)
             floatingView.findViewById<TextView>(R.id.tv_previous_lyric).setTextColor(semiTransparentTextColor)
             floatingView.findViewById<TextView>(R.id.tv_next_lyric).setTextColor(semiTransparentTextColor)
-
-        } catch (e: Exception) {
-            // Failsafe
-        }
+        } catch (e: Exception) { }
     }
 }

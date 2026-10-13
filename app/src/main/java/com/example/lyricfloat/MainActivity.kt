@@ -21,53 +21,85 @@ import androidx.core.content.ContextCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var switchStartService: SwitchCompat
+    private lateinit var switchFloatingBox: SwitchCompat
+    private lateinit var switchNotification: SwitchCompat
+    private lateinit var switchLockScreen: SwitchCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // ==========================================
-        // 1. ORIGINAL PERMISSION & START TOGGLE
-        // ==========================================
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+
+        // 1. Core Controls
         val btnGrantAccess = findViewById<Button>(R.id.btn_notification_access)
         switchStartService = findViewById(R.id.switch_start_service)
 
         btnGrantAccess.setOnClickListener {
-            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            startActivity(intent)
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
         switchStartService.setOnCheckedChangeListener { buttonView, isChecked ->
             if (!buttonView.isPressed) return@setOnCheckedChangeListener
-
             if (isChecked) {
-                if (!Settings.canDrawOverlays(this)) {
+                if (!Settings.canDrawOverlays(this) && prefs.getBoolean("pref_floating_box", true)) {
                     Toast.makeText(this, "Please grant Overlay Permission first!", Toast.LENGTH_SHORT).show()
                     switchStartService.isChecked = false
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:$packageName")
-                    )
-                    startActivity(intent)
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
                     return@setOnCheckedChangeListener
                 }
-
-                val serviceIntent = Intent(this, FloatingLyricsService::class.java)
-                ContextCompat.startForegroundService(this, serviceIntent)
+                ContextCompat.startForegroundService(this, Intent(this, FloatingLyricsService::class.java))
             } else {
-                val serviceIntent = Intent(this, FloatingLyricsService::class.java)
-                stopService(serviceIntent)
+                stopService(Intent(this, FloatingLyricsService::class.java))
             }
         }
 
-        // ==========================================
-        // 2. COLOR CUSTOMIZATION & LIVE PREVIEW
-        // ==========================================
-        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        // 2. Display Toggles
+        switchFloatingBox = findViewById(R.id.switch_floating_box)
+        switchNotification = findViewById(R.id.switch_notification)
+        switchLockScreen = findViewById(R.id.switch_lock_screen)
+
+        switchFloatingBox.isChecked = prefs.getBoolean("pref_floating_box", true)
+        switchFloatingBox.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (buttonView.isPressed) {
+                prefs.edit().putBoolean("pref_floating_box", isChecked).apply()
+                sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+            }
+        }
+
+        switchNotification.isChecked = prefs.getBoolean("pref_notification", true)
+        switchNotification.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (buttonView.isPressed) {
+                prefs.edit().putBoolean("pref_notification", isChecked).apply()
+
+                // If disabling the main notification, force disable the lock screen
+                if (!isChecked && switchLockScreen.isChecked) {
+                    switchLockScreen.isChecked = false
+                    prefs.edit().putBoolean("pref_lock_screen", false).apply()
+                }
+                sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+            }
+        }
+
+        switchLockScreen.isChecked = prefs.getBoolean("pref_lock_screen", true)
+        switchLockScreen.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (buttonView.isPressed) {
+                prefs.edit().putBoolean("pref_lock_screen", isChecked).apply()
+
+                // If enabling the lock screen, force enable the main notification
+                if (isChecked && !switchNotification.isChecked) {
+                    switchNotification.isChecked = true
+                    prefs.edit().putBoolean("pref_notification", true).apply()
+                }
+                sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+            }
+        }
+
+
+        // 3. Theme & Colors (Unchanged)
         val etBgColor = findViewById<EditText>(R.id.et_bg_color)
         val etTextColor = findViewById<EditText>(R.id.et_text_color)
         val btnSave = findViewById<Button>(R.id.btn_save_colors)
-
         val previewContainer = findViewById<View>(R.id.preview_container)
         val previewPrev = findViewById<TextView>(R.id.preview_prev)
         val previewCurrent = findViewById<TextView>(R.id.preview_current)
@@ -78,7 +110,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 val bgHex = etBgColor.text.toString().trim()
                 val textHex = etTextColor.text.toString().trim()
-
                 val parsedBgColor = Color.parseColor(bgHex)
                 val parsedTextColor = Color.parseColor(textHex)
 
@@ -88,19 +119,12 @@ class MainActivity : AppCompatActivity() {
                 backgroundShape.setColor(parsedBgColor)
                 previewContainer.background = backgroundShape
 
-                val semiTransparentText = Color.argb(
-                    128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor)
-                )
-
+                val semiTransparentText = Color.argb(128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor))
                 previewCurrent.setTextColor(parsedTextColor)
                 previewPrev.setTextColor(semiTransparentText)
                 previewNext.setTextColor(semiTransparentText)
-
                 seekTransparency.progress = Color.alpha(parsedBgColor)
-
-            } catch (e: Exception) {
-                // Ignore incomplete typing
-            }
+            } catch (e: Exception) {}
         }
 
         val textWatcher = object : TextWatcher {
@@ -116,11 +140,8 @@ class MainActivity : AppCompatActivity() {
                 if (fromUser) {
                     try {
                         val currentColor = Color.parseColor(etBgColor.text.toString().trim())
-                        val newColor = Color.argb(
-                            progress, Color.red(currentColor), Color.green(currentColor), Color.blue(currentColor)
-                        )
-                        val hexString = String.format("#%08X", -0x1 and newColor)
-                        etBgColor.setText(hexString)
+                        val newColor = Color.argb(progress, Color.red(currentColor), Color.green(currentColor), Color.blue(currentColor))
+                        etBgColor.setText(String.format("#%08X", -0x1 and newColor))
                     } catch (e: Exception) {}
                 }
             }
@@ -132,52 +153,20 @@ class MainActivity : AppCompatActivity() {
         etTextColor.setText(prefs.getString("text_color", "#FFFFFFFF"))
 
         btnSave.setOnClickListener {
-            val bgHex = etBgColor.text.toString().trim()
-            val textHex = etTextColor.text.toString().trim()
-
             try {
-                Color.parseColor(bgHex)
-                Color.parseColor(textHex)
-
-                prefs.edit()
-                    .putString("bg_color", bgHex)
-                    .putString("text_color", textHex)
-                    .apply()
-
-                val updateIntent = Intent("UPDATE_COLORS")
-                updateIntent.setPackage(packageName)
-                sendBroadcast(updateIntent)
-
+                Color.parseColor(etBgColor.text.toString().trim())
+                Color.parseColor(etTextColor.text.toString().trim())
+                prefs.edit().putString("bg_color", etBgColor.text.toString().trim()).putString("text_color", etTextColor.text.toString().trim()).apply()
+                sendBroadcast(Intent("UPDATE_COLORS").apply { setPackage(packageName) })
                 Toast.makeText(this, "Colors applied!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(this, "Invalid Hex Code. Use format #AARRGGBB", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Invalid Hex Code", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // ==========================================
-        // 3. PRESET THEMES
-        // ==========================================
-        val btnThemeDark = findViewById<Button>(R.id.btn_theme_dark)
-        val btnThemeLight = findViewById<Button>(R.id.btn_theme_light)
-        val btnThemeGreen = findViewById<Button>(R.id.btn_theme_green)
-
-        fun applyPreset(bgHex: String, textHex: String) {
-            etBgColor.setText(bgHex)
-            etTextColor.setText(textHex)
-            btnSave.performClick()
-        }
-
-        btnThemeDark.setOnClickListener {
-            applyPreset("#FF000000", "#FFFFFFFF")
-        }
-
-        btnThemeLight.setOnClickListener {
-            applyPreset("#FFFFFFFF", "#FF000000")
-        }
-
-        btnThemeGreen.setOnClickListener {
-            applyPreset("#FF191414", "#FF1DB954")
-        }
+        findViewById<Button>(R.id.btn_theme_dark).setOnClickListener { etBgColor.setText("#FF000000"); etTextColor.setText("#FFFFFFFF"); btnSave.performClick() }
+        findViewById<Button>(R.id.btn_theme_light).setOnClickListener { etBgColor.setText("#FFFFFFFF"); etTextColor.setText("#FF000000"); btnSave.performClick() }
+        findViewById<Button>(R.id.btn_theme_green).setOnClickListener { etBgColor.setText("#FF191414"); etTextColor.setText("#FF1DB954"); btnSave.performClick() }
     }
 
     override fun onResume() {

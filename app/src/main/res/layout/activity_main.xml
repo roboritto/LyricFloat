@@ -15,6 +15,33 @@
         android:layout_gravity="center"
         android:layout_margin="16dp" />
 
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_floating_box"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Show Floating Box"
+        android:textSize="16sp"
+        android:layout_gravity="center"
+        android:layout_margin="4dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_notification"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Show Lyrics in Notification Panel"
+        android:textSize="16sp"
+        android:layout_gravity="center"
+        android:layout_margin="4dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_lock_screen"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Show Lyrics on Lock Screen"
+        android:textSize="16sp"
+        android:layout_gravity="center"
+        android:layout_margin="4dp" />
+
     <Button
         android:id="@+id/btn_notification_access"
         android:layout_width="wrap_content"
