@@ -96,6 +96,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val switchWidgetAlbumArt = findViewById<SwitchCompat>(R.id.switch_widget_album_art)
+
+        switchWidgetAlbumArt.isChecked = prefs.getBoolean("pref_widget_album_art", true)
+        switchWidgetAlbumArt.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (buttonView.isPressed) {
+                prefs.edit().putBoolean("pref_widget_album_art", isChecked).apply()
+                sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+            }
+        }
+
 
         // 3. Theme & Colors (Unchanged)
         val etBgColor = findViewById<EditText>(R.id.et_bg_color)

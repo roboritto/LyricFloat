@@ -36,6 +36,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.appwidget.AppWidgetManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 class FloatingLyricsService : Service() {
 
@@ -112,6 +119,12 @@ class FloatingLyricsService : Service() {
     private val colorReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             applyCustomColors()
+
+            // NEW: Force the widget to redraw with the new colors immediately
+            val widgetIntent = Intent(this@FloatingLyricsService, LyricsWidgetProvider::class.java).apply {
+                action = "UPDATE_COLORS"
+            }
+            sendBroadcast(widgetIntent)
         }
     }
 
@@ -185,7 +198,15 @@ class FloatingLyricsService : Service() {
             val prev = if (currentLyricIndex > 0) parsedLyrics[currentLyricIndex - 1].text else ""
             val curr = parsedLyrics[currentLyricIndex].text
             val next = if (currentLyricIndex < parsedLyrics.size - 1) parsedLyrics[currentLyricIndex + 1].text else ""
+
             notificationManager.notify(NOTIFICATION_ID, buildNotification(prev, curr, next))
+
+            val wPrev2 = if (currentLyricIndex > 1) parsedLyrics[currentLyricIndex - 2].text else ""
+            val wNext2 = if (currentLyricIndex < parsedLyrics.size - 2) parsedLyrics[currentLyricIndex + 2].text else ""
+            updateHomeScreenWidget(wPrev2, prev, curr, next, wNext2)
+        } else {
+            val titleText = if (currentTrackName.isNotEmpty()) "♫ $currentTrackName ♫" else "Waiting for music..."
+            updateHomeScreenWidget("", "", titleText, "", "")
         }
     }
 
@@ -200,7 +221,6 @@ class FloatingLyricsService : Service() {
         var initialTouchX = 0f
         var initialTouchY = 0f
 
-        // 1. Dedicated Drag Handle
         val dragHandle = floatingView.findViewById<View>(R.id.dedicated_drag_handle)
         dragHandle.setOnTouchListener { _, event ->
             when (event.action) {
@@ -221,7 +241,6 @@ class FloatingLyricsService : Service() {
             }
         }
 
-        // 2. Main Window Controls
         var lastTouchY = 0f
         var tapCount = 0
         var lastTapTime = 0L
@@ -241,7 +260,6 @@ class FloatingLyricsService : Service() {
                     lastTouchY = event.rawY
                     hasScrolled = false
 
-                    // FREEZE the viewport at the exact current line
                     touchLockIndex = Math.max(0, currentLyricIndex)
                     scrollResetHandler.removeCallbacks(scrollResetRunnable)
 
@@ -287,9 +305,8 @@ class FloatingLyricsService : Service() {
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(longPressRunnable)
                     isDraggingAllowed = false
-                    touchLockIndex = -1 // Release the holding lock
+                    touchLockIndex = -1
 
-                    // Only start auto-reset if they actively have a scrolled index set
                     if (manualScrollIndex != -1) {
                         resetScrollTimer()
                     }
@@ -305,8 +322,11 @@ class FloatingLyricsService : Service() {
                             if (isFloatingViewAttached) windowManager.updateViewLayout(floatingView, floatingParams)
                             Toast.makeText(this@FloatingLyricsService, "Position reset", Toast.LENGTH_SHORT).show()
                         } else if (tapCount == 3) {
-                            Toast.makeText(this@FloatingLyricsService, "Lyrics closed", Toast.LENGTH_SHORT).show()
-                            stopSelf()
+                            // Hide the box instead of killing the service
+                            val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+                            prefs.edit().putBoolean("pref_floating_box", false).apply()
+                            sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+                            Toast.makeText(this@FloatingLyricsService, "Floating Box Hidden", Toast.LENGTH_SHORT).show()
                         }
                     }
                     true
@@ -323,6 +343,10 @@ class FloatingLyricsService : Service() {
         syncJob?.cancel()
         scrollResetHandler.removeCallbacks(scrollResetRunnable)
         notificationManager.cancel(NOTIFICATION_ID)
+
+        // Reset the widget when the service dies
+        updateHomeScreenWidget("", "", "Lyric Float is off", "", "")
+
         try {
             unregisterReceiver(colorReceiver)
             unregisterReceiver(lyricsReceiver)
@@ -337,11 +361,41 @@ class FloatingLyricsService : Service() {
         try { TileService.requestListeningState(this, ComponentName(this, LyricsTileService::class.java)) } catch (e: Exception) { }
     }
 
+    private fun updateHomeScreenWidget(prev2: String, prev1: String, current: String, next1: String, next2: String) {
+        val appWidgetManager = AppWidgetManager.getInstance(this)
+        val thisWidget = ComponentName(this, LyricsWidgetProvider::class.java)
+        val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
+
+        if (allWidgetIds.isEmpty()) return
+
+        val views = RemoteViews(packageName, R.layout.widget_lyrics)
+        views.setTextViewText(R.id.widget_tv_prev2, prev2)
+        views.setTextViewText(R.id.widget_tv_prev1, prev1)
+        views.setTextViewText(R.id.widget_tv_current, current)
+        views.setTextViewText(R.id.widget_tv_next1, next1)
+        views.setTextViewText(R.id.widget_tv_next2, next2)
+
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val useAlbumArt = prefs.getBoolean("pref_widget_album_art", true)
+
+        if (useAlbumArt && currentAlbumArt != null) {
+            views.setImageViewBitmap(R.id.widget_background, currentAlbumArt)
+            views.setInt(R.id.widget_background, "setColorFilter", Color.parseColor("#99000000"))
+        } else {
+            val parsedBgColor = Color.parseColor(prefs.getString("bg_color", "#FF000000") ?: "#FF000000")
+            views.setImageViewBitmap(R.id.widget_background, null)
+            views.setInt(R.id.widget_background, "setColorFilter", parsedBgColor)
+        }
+
+        appWidgetManager.updateAppWidget(thisWidget, views)
+    }
+
     private fun setStatusText(message: String) {
         if (isFloatingViewAttached) {
             floatingView.findViewById<TextView>(R.id.tv_dynamic_lyrics).text = message
         }
         notificationManager.notify(NOTIFICATION_ID, buildNotification("", message, ""))
+        updateHomeScreenWidget("", "", message, "", "")
     }
 
     private suspend fun getBestLyrics(trackName: String, artistName: String, onProgress: suspend (String) -> Unit): String? {
@@ -362,6 +416,10 @@ class FloatingLyricsService : Service() {
                 if (!finalLyrics.isNullOrEmpty()) {
                     if (finalLyrics.contains("[00:")) {
                         val parsed = parseLrc(finalLyrics)
+
+                        // NEW: Fetch the album art before starting the timer
+                        currentAlbumArt = fetchAlbumArt(title, artist)
+
                         withContext(Dispatchers.Main) {
                             parsedLyrics = parsed
                             startSyncTimer()
@@ -478,6 +536,17 @@ class FloatingLyricsService : Service() {
                     if (indexChanged && manualScrollIndex == -1) {
                         notificationManager.notify(NOTIFICATION_ID, buildNotification(prevText, currentText, nextText))
                     }
+
+                    // ALWAYS update the Home Screen Widget with LIVE lyrics (ignoring manual scrolls)
+                    if (indexChanged) {
+                        val wPrev2 = if (currentIndex > 1) parsedLyrics[currentIndex - 2].text else ""
+                        val wPrev1 = prevText // Reuse the already calculated string
+                        val wCurr = currentText // Reuse the already calculated string
+                        val wNext1 = nextText // Reuse the already calculated string
+                        val wNext2 = if (currentIndex >= -1 && currentIndex < parsedLyrics.size - 2) parsedLyrics[currentIndex + 2].text else ""
+
+                        updateHomeScreenWidget(wPrev2, wPrev1, wCurr, wNext1, wNext2)
+                    }
                 }
                 delay(100)
             }
@@ -524,5 +593,76 @@ class FloatingLyricsService : Service() {
 
             floatingView.findViewById<View>(R.id.lyrics_container).background = backgroundShape
         } catch (e: Exception) { }
+    }
+
+    // Add this near your other state variables (like currentLyricIndex)
+    private var currentAlbumArt: Bitmap? = null
+
+    // Add this helper function inside the class
+    private suspend fun fetchAlbumArt(track: String, artist: String): Bitmap? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val query = URLEncoder.encode("$track $artist", "UTF-8")
+                val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(response)
+
+                    if (json.getInt("resultCount") > 0) {
+                        val item = json.getJSONArray("results").getJSONObject(0)
+                        // The API returns a 100x100 thumbnail by default. We replace the string to request a crisp 600x600 image instead.
+                        val artworkUrl = item.getString("artworkUrl100").replace("100x100bb", "600x600bb")
+
+                        val imageConn = URL(artworkUrl).openConnection() as HttpURLConnection
+                        val rawBitmap = BitmapFactory.decodeStream(imageConn.inputStream)
+
+                        // Apply a 64-pixel radius to the corners
+                        return@withContext getRoundedCropBitmap(rawBitmap, 48f)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            null
+        }
+    }
+
+    private fun getRoundedCropBitmap(bitmap: Bitmap, cornerRadius: Float): Bitmap {
+        // Force the image into a wide 2:1 aspect ratio to fit the 4x2 widget
+        val targetWidth = 800
+        val targetHeight = 400
+
+        val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(output)
+
+        // Calculate how much to scale and shift the image to perfectly center it
+        val scale = Math.max(targetWidth.toFloat() / bitmap.width, targetHeight.toFloat() / bitmap.height)
+        val scaledWidth = scale * bitmap.width
+        val scaledHeight = scale * bitmap.height
+        val left = (targetWidth - scaledWidth) / 2f
+        val top = (targetHeight - scaledHeight) / 2f
+
+        val paint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = Color.BLACK
+        }
+
+        // Draw the rounded mask
+        val targetRect = android.graphics.RectF(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat())
+        canvas.drawARGB(0, 0, 0, 0)
+        canvas.drawRoundRect(targetRect, cornerRadius, cornerRadius, paint)
+
+        // Draw the album art inside the mask
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+        val matrix = android.graphics.Matrix().apply {
+            postScale(scale, scale)
+            postTranslate(left, top)
+        }
+        canvas.drawBitmap(bitmap, matrix, paint)
+
+        return output
     }
 }
