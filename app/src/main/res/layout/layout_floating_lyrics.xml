@@ -1,41 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/lyrics_container"
-    android:layout_width="300dp"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
     android:background="@drawable/rounded_bg_semi_transparent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="16dp"
-    android:animateLayoutChanges="true">
+    android:gravity="center_vertical">
 
-<TextView
-android:id="@+id/tv_previous_lyric"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:textColor="#88FFFFFF"
-android:textSize="12sp"
-android:textAlignment="center"
-android:paddingBottom="4dp"
-android:visibility="visible" />
+    <!-- Dedicated Drag Handle (Left Side) -->
+    <LinearLayout
+        android:id="@+id/dedicated_drag_handle"
+        android:layout_width="32dp"
+        android:layout_height="match_parent"
+        android:minHeight="48dp"
+        android:gravity="center"
+        android:orientation="vertical">
 
-<TextView
-android:id="@+id/tv_current_lyric"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:textColor="#FFFFFF"
-android:textSize="16sp"
-android:textStyle="bold"
-android:textAlignment="center" />
-
-<TextView
-android:id="@+id/tv_next_lyric"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:textColor="#88FFFFFF"
-android:textSize="12sp"
-android:textAlignment="center"
-android:paddingTop="4dp"
-android:visibility="visible" />
-
+        <!-- A simple visual grip line -->
+        <View
+            android:layout_width="4dp"
+            android:layout_height="24dp"
+            android:background="#80FFFFFF" />
     </LinearLayout>
+
+    <!-- Dynamic Lyrics (Takes up remaining space) -->
+    <TextView
+        android:id="@+id/tv_dynamic_lyrics"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textAlignment="center"
+        android:textSize="16sp"
+        android:lineSpacingExtra="4dp"
+        android:textStyle="bold" />
+
+</LinearLayout>

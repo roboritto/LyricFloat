@@ -16,6 +16,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.service.quicksettings.TileService
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -49,8 +52,15 @@ class FloatingLyricsService : Service() {
 
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "lyrics_lock_screen_channel_V2"
-    private var currentLyricIndex = -1
+    private var currentLyricIndex = -2
     private var isFloatingViewAttached = false
+
+    // Absolute Scrolling & Freezing States
+    private var manualScrollIndex = -1
+    private var touchLockIndex = -1
+    private var lastRenderedActiveIndex = -2
+    private val scrollResetHandler = Handler(Looper.getMainLooper())
+    private val scrollResetRunnable = Runnable { manualScrollIndex = -1 }
 
     private var parsedLyrics = listOf<LyricLine>()
     private var syncJob: Job? = null
@@ -80,10 +90,10 @@ class FloatingLyricsService : Service() {
                     currentTrackName = trackName
                     syncJob?.cancel()
                     parsedLyrics = emptyList()
-
-                    // CHANGE THIS from -1 to -2
                     currentLyricIndex = -2
-
+                    lastRenderedActiveIndex = -2
+                    manualScrollIndex = -1
+                    touchLockIndex = -1
                     setStatusText("Searching: $trackName...")
                     fetchLyrics(trackName, artistName ?: "")
                 } else {
@@ -139,7 +149,7 @@ class FloatingLyricsService : Service() {
             }
 
             setupGestureControls()
-            applyDisplayPreferences() // Attaches view if prefs allow
+            applyDisplayPreferences()
             applyCustomColors()
 
             ContextCompat.registerReceiver(this, lyricsReceiver, IntentFilter("UPDATE_LYRICS"), ContextCompat.RECEIVER_NOT_EXPORTED)
@@ -171,7 +181,6 @@ class FloatingLyricsService : Service() {
             } catch (e: Exception) {}
         }
 
-        // Force a notification refresh to apply new visibility/content rules immediately
         if (parsedLyrics.isNotEmpty() && currentLyricIndex in parsedLyrics.indices) {
             val prev = if (currentLyricIndex > 0) parsedLyrics[currentLyricIndex - 1].text else ""
             val curr = parsedLyrics[currentLyricIndex].text
@@ -180,15 +189,20 @@ class FloatingLyricsService : Service() {
         }
     }
 
+    private fun resetScrollTimer() {
+        scrollResetHandler.removeCallbacks(scrollResetRunnable)
+        scrollResetHandler.postDelayed(scrollResetRunnable, 4000)
+    }
+
     private fun setupGestureControls() {
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
-        var tapCount = 0
-        var lastTapTime = 0L
 
-        floatingView.findViewById<View>(R.id.lyrics_container).setOnTouchListener { _, event ->
+        // 1. Dedicated Drag Handle
+        val dragHandle = floatingView.findViewById<View>(R.id.dedicated_drag_handle)
+        dragHandle.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = floatingParams.x
@@ -203,8 +217,84 @@ class FloatingLyricsService : Service() {
                     if (isFloatingViewAttached) windowManager.updateViewLayout(floatingView, floatingParams)
                     true
                 }
+                else -> false
+            }
+        }
+
+        // 2. Main Window Controls
+        var lastTouchY = 0f
+        var tapCount = 0
+        var lastTapTime = 0L
+        var isDraggingAllowed = false
+        var hasScrolled = false
+
+        val handler = Handler(Looper.getMainLooper())
+        val longPressRunnable = Runnable { isDraggingAllowed = true }
+
+        floatingView.findViewById<View>(R.id.lyrics_container).setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = floatingParams.x
+                    initialY = floatingParams.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    lastTouchY = event.rawY
+                    hasScrolled = false
+
+                    // FREEZE the viewport at the exact current line
+                    touchLockIndex = Math.max(0, currentLyricIndex)
+                    scrollResetHandler.removeCallbacks(scrollResetRunnable)
+
+                    isDraggingAllowed = false
+                    handler.postDelayed(longPressRunnable, 400)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = Math.abs(event.rawX - initialTouchX)
+                    val dy = Math.abs(event.rawY - initialTouchY)
+
+                    if (!isDraggingAllowed && (dx > 15f || dy > 15f)) {
+                        handler.removeCallbacks(longPressRunnable)
+                    }
+
+                    if (isDraggingAllowed && isFloatingViewAttached) {
+                        floatingParams.x = initialX + (event.rawX - initialTouchX).toInt()
+                        floatingParams.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager.updateViewLayout(floatingView, floatingParams)
+                    } else if (!isDraggingAllowed && parsedLyrics.isNotEmpty()) {
+                        val deltaY = event.rawY - lastTouchY
+                        val scrollThreshold = 60f
+
+                        if (deltaY < -scrollThreshold) {
+                            if (manualScrollIndex == -1) manualScrollIndex = touchLockIndex
+                            val maxIndex = parsedLyrics.size - 1
+                            if (manualScrollIndex < maxIndex) {
+                                manualScrollIndex++
+                                lastTouchY = event.rawY
+                                hasScrolled = true
+                            }
+                        } else if (deltaY > scrollThreshold) {
+                            if (manualScrollIndex == -1) manualScrollIndex = touchLockIndex
+                            if (manualScrollIndex > 0) {
+                                manualScrollIndex--
+                                lastTouchY = event.rawY
+                                hasScrolled = true
+                            }
+                        }
+                    }
+                    true
+                }
                 MotionEvent.ACTION_UP -> {
-                    if (Math.abs(event.rawX - initialTouchX) < 10f && Math.abs(event.rawY - initialTouchY) < 10f) {
+                    handler.removeCallbacks(longPressRunnable)
+                    isDraggingAllowed = false
+                    touchLockIndex = -1 // Release the holding lock
+
+                    // Only start auto-reset if they actively have a scrolled index set
+                    if (manualScrollIndex != -1) {
+                        resetScrollTimer()
+                    }
+
+                    if (!hasScrolled && Math.abs(event.rawX - initialTouchX) < 10f && Math.abs(event.rawY - initialTouchY) < 10f) {
                         val currentTime = System.currentTimeMillis()
                         if (currentTime - lastTapTime < 350L) tapCount++ else tapCount = 1
                         lastTapTime = currentTime
@@ -231,6 +321,7 @@ class FloatingLyricsService : Service() {
         isRunning = false
         requestTileUpdate()
         syncJob?.cancel()
+        scrollResetHandler.removeCallbacks(scrollResetRunnable)
         notificationManager.cancel(NOTIFICATION_ID)
         try {
             unregisterReceiver(colorReceiver)
@@ -248,9 +339,7 @@ class FloatingLyricsService : Service() {
 
     private fun setStatusText(message: String) {
         if (isFloatingViewAttached) {
-            floatingView.findViewById<TextView>(R.id.tv_previous_lyric).text = ""
-            floatingView.findViewById<TextView>(R.id.tv_current_lyric).text = message
-            floatingView.findViewById<TextView>(R.id.tv_next_lyric).text = ""
+            floatingView.findViewById<TextView>(R.id.tv_dynamic_lyrics).text = message
         }
         notificationManager.notify(NOTIFICATION_ID, buildNotification("", message, ""))
     }
@@ -322,39 +411,73 @@ class FloatingLyricsService : Service() {
         syncJob = CoroutineScope(Dispatchers.Main).launch {
             while (isActive) {
                 val estimatedPosition = currentPositionMs + (System.currentTimeMillis() - lastUpdateTime)
-
-                // This will be -1 if the song hasn't reached the first lyric yet
                 val currentIndex = parsedLyrics.indexOfLast { it.timeMs <= estimatedPosition }
 
-                // Only update the UI if the line actually changed
-                if (currentIndex != currentLyricIndex) {
+                // 1. Determine what the viewport SHOULD be displaying right now
+                val activeIndex = if (manualScrollIndex != -1) {
+                    manualScrollIndex // Show what the user manually scrolled to
+                } else if (touchLockIndex != -1) {
+                    touchLockIndex // Freeze on the line where the user touched
+                } else {
+                    currentIndex // Show the actual live song progress
+                }
+
+                val indexChanged = (currentIndex != currentLyricIndex || currentLyricIndex == -2)
+                val viewChanged = (activeIndex != lastRenderedActiveIndex)
+
+                // 2. Only re-render if the song moved forward OR the user dragged the screen
+                if (indexChanged || viewChanged) {
                     currentLyricIndex = currentIndex
+                    lastRenderedActiveIndex = activeIndex
 
                     val prevText: String
                     val currentText: String
                     val nextText: String
 
                     if (currentIndex == -1) {
-                        // STATE: Song is playing, but hasn't reached the first lyric yet
                         prevText = ""
-                        currentText = "♫ $currentTrackName ♫" // Show the song title
-                        nextText = if (parsedLyrics.isNotEmpty()) parsedLyrics[0].text else "" // Peek at the upcoming first lyric
+                        currentText = "♫ $currentTrackName ♫"
+                        nextText = if (parsedLyrics.isNotEmpty()) parsedLyrics[0].text else ""
                     } else {
-                        // STATE: Normal singing timeline
                         prevText = if (currentIndex > 0) parsedLyrics[currentIndex - 1].text else ""
                         currentText = parsedLyrics[currentIndex].text
                         nextText = if (currentIndex < parsedLyrics.size - 1) parsedLyrics[currentIndex + 1].text else ""
                     }
 
-                    // 1. Update Floating Box
+                    // Update Floating Box
                     if (isFloatingViewAttached) {
-                        floatingView.findViewById<TextView>(R.id.tv_previous_lyric).text = prevText
-                        floatingView.findViewById<TextView>(R.id.tv_current_lyric).text = currentText
-                        floatingView.findViewById<TextView>(R.id.tv_next_lyric).text = nextText
+                        if (activeIndex == -1) {
+                            floatingView.findViewById<TextView>(R.id.tv_dynamic_lyrics).text = "$currentText\n$nextText"
+                        } else {
+                            val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+                            val visibleLines = prefs.getInt("pref_default_lines", 3)
+                            val halfOffset = visibleLines / 2
+
+                            val builder = SpannableStringBuilder()
+                            val parsedTextColor = Color.parseColor(prefs.getString("text_color", "#FFFFFFFF"))
+                            val semiTransparentTextColor = Color.argb(128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor))
+
+                            for (i in (activeIndex - halfOffset)..(activeIndex + halfOffset)) {
+                                if (i in parsedLyrics.indices) {
+                                    val start = builder.length
+                                    val lineText = parsedLyrics[i].text + "\n"
+                                    builder.append(lineText)
+
+                                    // Highlight tracks the audio accurately even if the window is frozen
+                                    val color = if (i == currentIndex) parsedTextColor else semiTransparentTextColor
+                                    builder.setSpan(ForegroundColorSpan(color), start, builder.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                } else {
+                                    builder.append("\n")
+                                }
+                            }
+                            floatingView.findViewById<TextView>(R.id.tv_dynamic_lyrics).text = builder.trimEnd()
+                        }
                     }
 
-                    // 2. Update Lock Screen / Notification Panel
-                    notificationManager.notify(NOTIFICATION_ID, buildNotification(prevText, currentText, nextText))
+                    // Update Notification Panel (Only if the actual song progressed)
+                    if (indexChanged && manualScrollIndex == -1) {
+                        notificationManager.notify(NOTIFICATION_ID, buildNotification(prevText, currentText, nextText))
+                    }
                 }
                 delay(100)
             }
@@ -393,8 +516,6 @@ class FloatingLyricsService : Service() {
         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
         try {
             val parsedBgColor = Color.parseColor(prefs.getString("bg_color", "#FF000000") ?: "#FF000000")
-            val parsedTextColor = Color.parseColor(prefs.getString("text_color", "#FFFFFFFF") ?: "#FFFFFFFF")
-            val semiTransparentTextColor = Color.argb(128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor))
 
             val backgroundShape = GradientDrawable()
             backgroundShape.shape = GradientDrawable.RECTANGLE
@@ -402,9 +523,6 @@ class FloatingLyricsService : Service() {
             backgroundShape.setColor(parsedBgColor)
 
             floatingView.findViewById<View>(R.id.lyrics_container).background = backgroundShape
-            floatingView.findViewById<TextView>(R.id.tv_current_lyric).setTextColor(parsedTextColor)
-            floatingView.findViewById<TextView>(R.id.tv_previous_lyric).setTextColor(semiTransparentTextColor)
-            floatingView.findViewById<TextView>(R.id.tv_next_lyric).setTextColor(semiTransparentTextColor)
         } catch (e: Exception) { }
     }
 }

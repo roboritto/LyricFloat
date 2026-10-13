@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val seekDefaultLines = findViewById<SeekBar>(R.id.seek_default_lines)
 
         // 1. Core Controls
         val btnGrantAccess = findViewById<Button>(R.id.btn_notification_access)
@@ -163,6 +164,25 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Invalid Hex Code", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // Load saved default lines (Default to progress 1, which equals 3 lines)
+        val savedProgress = prefs.getInt("pref_lines_progress", 1)
+        seekDefaultLines.progress = savedProgress
+
+        seekDefaultLines.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val lines = (progress * 2) + 1 // Maps 0,1,2,3,4 to 1,3,5,7,9
+                    prefs.edit()
+                        .putInt("pref_lines_progress", progress)
+                        .putInt("pref_default_lines", lines)
+                        .apply()
+                    Toast.makeText(this@MainActivity, "Default set to $lines lines", Toast.LENGTH_SHORT).show()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
 
         findViewById<Button>(R.id.btn_theme_dark).setOnClickListener { etBgColor.setText("#FF000000"); etTextColor.setText("#FFFFFFFF"); btnSave.performClick() }
         findViewById<Button>(R.id.btn_theme_light).setOnClickListener { etBgColor.setText("#FFFFFFFF"); etTextColor.setText("#FF000000"); btnSave.performClick() }
