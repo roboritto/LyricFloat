@@ -1,44 +1,54 @@
-package com.example.lyricfloat
+package com.example.lyricfloat // Verify this matches your app package
 
+import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import android.widget.Toast
 
 class LyricsTileService : TileService() {
 
-    // This runs every time you pull down the control panel
     override fun onStartListening() {
         super.onStartListening()
-
-        val tile = qsTile ?: return
-
-        // Check the flag from our floating service
-        if (FloatingLyricsService.isRunning) {
-            tile.state = Tile.STATE_ACTIVE // Lights up blue
-        } else {
-            tile.state = Tile.STATE_INACTIVE // Dims to black/gray
-        }
-
-        tile.updateTile() // Apply the color change
+        updateTileState()
     }
 
-    // Triggered when the user taps the tile
     override fun onClick() {
         super.onClick()
 
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Please open Dynamic Lyrics to grant permissions first.", Toast.LENGTH_LONG).show()
-            return
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val isBoxVisible = prefs.getBoolean("pref_floating_box", true)
+
+        // Toggle the floating box preference
+        prefs.edit().putBoolean("pref_floating_box", !isBoxVisible).apply()
+
+        // Tell the background service to update its views
+        sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+
+        // Update the tile appearance
+        updateTileState()
+    }
+
+    private fun updateTileState() {
+        val tile = qsTile ?: return
+        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+        val isBoxVisible = prefs.getBoolean("pref_floating_box", true)
+
+        if (FloatingLyricsService.isRunning) {
+            if (isBoxVisible) {
+                tile.state = Tile.STATE_ACTIVE
+                tile.label = "Float On"
+                tile.subtitle = "" // Clear the subtitle so it doesn't stack
+            } else {
+                tile.state = Tile.STATE_INACTIVE
+                tile.label = "Float Off"
+                tile.subtitle = ""
+            }
+        } else {
+            tile.state = Tile.STATE_INACTIVE
+            tile.label = "Service Off"
+            tile.subtitle = ""
         }
 
-        // Toggle the service based on its current state
-        val serviceIntent = Intent(this, FloatingLyricsService::class.java)
-        if (FloatingLyricsService.isRunning) {
-            stopService(serviceIntent) // Turn it off
-        } else {
-            startForegroundService(serviceIntent) // <--- CHANGE THIS LINE
-        }
+        tile.updateTile()
     }
 }
