@@ -7,27 +7,27 @@
     android:paddingHorizontal="12dp"
     android:gravity="center">
 
-<TextView
-android:id="@+id/notif_tv_prev"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:textColor="#77FFFFFF"
-android:textSize="11sp"
-android:maxLines="1"
+    <TextView
+    android:id="@+id/notif_tv_prev"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:textColor="#77FFFFFF"
+    android:textSize="11sp"
+    android:maxLines="1"
     android:ellipsize="end"
     android:textAlignment="center" />
 
-<TextView
-android:id="@+id/notif_tv_current"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:textColor="#FFFFFF"
-android:textSize="14sp"
-android:textStyle="bold"
-android:maxLines="1"
-android:paddingVertical="1dp"
-android:ellipsize="end"
-android:textAlignment="center" />
+    <TextView
+    android:id="@+id/notif_tv_current"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:textColor="#FFFFFF"
+    android:textSize="14sp"
+    android:textStyle="bold"
+    android:maxLines="1"
+    android:paddingVertical="1dp"
+    android:ellipsize="end"
+    android:textAlignment="center" />
 
 <TextView
 android:id="@+id/notif_tv_next"

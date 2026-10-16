@@ -60,9 +60,8 @@ class FloatingLyricsService : Service() {
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "lyrics_lock_screen_channel_V2"
     private var currentLyricIndex = -2
+    private var isResizing = false
     private var isFloatingViewAttached = false
-
-    // Absolute Scrolling & Freezing States
     private var manualScrollIndex = -1
     private var touchLockIndex = -1
     private var lastRenderedActiveIndex = -2
@@ -154,27 +153,96 @@ class FloatingLyricsService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
+                android.graphics.PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
                 x = 0
                 y = 0
             }
 
+            // --- 6-Dot Drag Handle Logic ---
+            val dragHandle = floatingView.findViewById<android.widget.ImageView>(R.id.drag_handle)
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+
+            dragHandle.setOnTouchListener { _, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        initialX = floatingParams.x
+                        initialY = floatingParams.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        floatingParams.x = initialX + (event.rawX - initialTouchX).toInt()
+                        floatingParams.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager.updateViewLayout(floatingView, floatingParams)
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            // --- Dynamic Line Expansion Handle ---
+            val expandHandle = floatingView.findViewById<android.widget.ImageView>(R.id.resize_handle)
+            var initialLines = 3
+            var expandInitialTouchY = 0f
+            val dragThresholdPx = 100f // Lowered back down for smoother response
+
+            expandHandle.setOnTouchListener { _, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        isResizing = true // Block background widget/notification sync
+
+                        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+                        initialLines = prefs.getInt("pref_default_lines", 3)
+                        expandInitialTouchY = event.rawY
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val deltaY = event.rawY - expandInitialTouchY
+                        val lineOffset = (deltaY / dragThresholdPx).toInt()
+
+                        var newLines = initialLines + lineOffset
+                        newLines = Math.max(1, Math.min(newLines, 7))
+
+                        val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
+                        if (prefs.getInt("pref_default_lines", 3) != newLines) {
+                            prefs.edit().putInt("pref_default_lines", newLines).apply()
+                            applyDisplayPreferences() // This will now ONLY update the local UI
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        isResizing = false // Re-enable background sync
+
+                        // Push one final update to sync the widget and notification
+                        applyDisplayPreferences()
+                        sendBroadcast(android.content.Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            // Setup scrolling and taps
             setupGestureControls()
             applyDisplayPreferences()
             applyCustomColors()
 
-            ContextCompat.registerReceiver(this, lyricsReceiver, IntentFilter("UPDATE_LYRICS"), ContextCompat.RECEIVER_NOT_EXPORTED)
-            ContextCompat.registerReceiver(this, colorReceiver, IntentFilter("UPDATE_COLORS"), ContextCompat.RECEIVER_NOT_EXPORTED)
-            ContextCompat.registerReceiver(this, displayPrefsReceiver, IntentFilter("UPDATE_DISPLAY_PREFS"), ContextCompat.RECEIVER_NOT_EXPORTED)
+            androidx.core.content.ContextCompat.registerReceiver(this, lyricsReceiver, android.content.IntentFilter("UPDATE_LYRICS"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+            androidx.core.content.ContextCompat.registerReceiver(this, colorReceiver, android.content.IntentFilter("UPDATE_COLORS"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+            androidx.core.content.ContextCompat.registerReceiver(this, displayPrefsReceiver, android.content.IntentFilter("UPDATE_DISPLAY_PREFS"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
 
-            Handler(Looper.getMainLooper()).postDelayed({
-                sendBroadcast(Intent("REQUEST_CURRENT_TRACK").apply { setPackage(packageName) })
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                sendBroadcast(android.content.Intent("REQUEST_CURRENT_TRACK").apply { setPackage(packageName) })
             }, 300)
 
         } catch (e: Exception) {
-            Toast.makeText(this, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(this, "CRASH: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -199,14 +267,20 @@ class FloatingLyricsService : Service() {
             val curr = parsedLyrics[currentLyricIndex].text
             val next = if (currentLyricIndex < parsedLyrics.size - 1) parsedLyrics[currentLyricIndex + 1].text else ""
 
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(prev, curr, next))
+            // Only update system UI if we aren't currently dragging the resize handle
+            if (!isResizing) {
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(prev, curr, next))
 
-            val wPrev2 = if (currentLyricIndex > 1) parsedLyrics[currentLyricIndex - 2].text else ""
-            val wNext2 = if (currentLyricIndex < parsedLyrics.size - 2) parsedLyrics[currentLyricIndex + 2].text else ""
-            updateHomeScreenWidget(wPrev2, prev, curr, next, wNext2)
+                val wPrev2 = if (currentLyricIndex > 1) parsedLyrics[currentLyricIndex - 2].text else ""
+                val wNext2 = if (currentLyricIndex < parsedLyrics.size - 2) parsedLyrics[currentLyricIndex + 2].text else ""
+                updateHomeScreenWidget(wPrev2, prev, curr, next, wNext2)
+            }
         } else {
-            val titleText = if (currentTrackName.isNotEmpty()) "♫ $currentTrackName ♫" else "Waiting for music..."
-            updateHomeScreenWidget("", "", titleText, "", "")
+            // Do the same for the fallback empty state
+            if (!isResizing) {
+                val titleText = if (currentTrackName.isNotEmpty()) "♫ $currentTrackName ♫" else "Waiting for music..."
+                updateHomeScreenWidget("", "", titleText, "", "")
+            }
         }
     }
 

@@ -18,10 +18,14 @@
         android:orientation="vertical">
 
         <!-- A simple visual grip line -->
-        <View
-            android:layout_width="4dp"
-            android:layout_height="24dp"
-            android:background="#80FFFFFF" />
+        <ImageView
+            android:id="@+id/drag_handle"
+            android:layout_width="32dp"
+            android:layout_height="match_parent"
+            android:src="@drawable/ic_drag_handle"
+            android:scaleType="center"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="Drag Handle" />
     </LinearLayout>
 
     <!-- Dynamic Lyrics (Takes up remaining space) -->
@@ -35,5 +39,16 @@
         android:textSize="16sp"
         android:lineSpacingExtra="4dp"
         android:textStyle="bold" />
+
+    <ImageView
+        android:id="@+id/resize_handle"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="bottom|end"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentEnd="true"
+        android:src="@drawable/ic_resize_handle"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:padding="4dp" />
 
 </LinearLayout>
