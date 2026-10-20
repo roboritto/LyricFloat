@@ -26,8 +26,8 @@
             android:textStyle="bold"
             android:textColor="#8294C4"
             android:gravity="center"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginTop="64dp"
+            android:layout_marginBottom="64dp" />
 
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btn_notification_access"
@@ -285,7 +285,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
                     <Button android:id="@+id/btn_widget_theme_dark" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Dark" android:textColor="#FFFFFF" android:backgroundTint="#222222" android:background="@drawable/bg_button_rounded" android:layout_marginEnd="4dp"/>
                     <Button android:id="@+id/btn_widget_theme_light" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Light" android:textColor="#000000" android:backgroundTint="#FFFFFF" android:background="@drawable/bg_button_rounded" android:layout_marginHorizontal="4dp"/>
-                    <Button android:id="@+id/btn_widget_theme_green" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Green" android:textColor="#FFFFFF" android:backgroundTint="#1DB954" android:background="@drawable/bg_button_rounded" android:layout_marginStart="4dp"/>
+                    <Button android:id="@+id/btn_widget_theme_accent" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Accent" android:textColor="#FFFFFF" android:backgroundTint="#FF5E3E" android:background="@drawable/bg_button_rounded" android:layout_marginStart="2dp"/>
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>

@@ -436,13 +436,15 @@ class FloatingLyricsService : Service() {
     }
 
     private fun updateHomeScreenWidget(prev2: String, prev1: String, current: String, next1: String, next2: String) {
-        val appWidgetManager = AppWidgetManager.getInstance(this)
-        val thisWidget = ComponentName(this, LyricsWidgetProvider::class.java)
+        val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(this)
+        val thisWidget = android.content.ComponentName(this, LyricsWidgetProvider::class.java)
         val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
 
         if (allWidgetIds.isEmpty()) return
 
-        val views = RemoteViews(packageName, R.layout.widget_lyrics)
+        val views = android.widget.RemoteViews(packageName, R.layout.widget_lyrics)
+
+        // 1. Set the text
         views.setTextViewText(R.id.widget_tv_prev2, prev2)
         views.setTextViewText(R.id.widget_tv_prev1, prev1)
         views.setTextViewText(R.id.widget_tv_current, current)
@@ -450,16 +452,64 @@ class FloatingLyricsService : Service() {
         views.setTextViewText(R.id.widget_tv_next2, next2)
 
         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
-        val useAlbumArt = prefs.getBoolean("pref_widget_album_art", true)
 
-        if (useAlbumArt && currentAlbumArt != null) {
-            views.setImageViewBitmap(R.id.widget_background, currentAlbumArt)
-            views.setInt(R.id.widget_background, "setColorFilter", Color.parseColor("#99000000"))
+        // 2. Handle Background (Album Art vs Custom Widget Color)
+        val useAlbumArt = prefs.getBoolean("pref_widget_album_art", true)
+        val useAccent = prefs.getBoolean("pref_widget_accent_color", false)
+
+        // --- FIX: Capture the mutable property into a local, constant variable ---
+        val localAlbumArt = currentAlbumArt
+
+        if (useAlbumArt && localAlbumArt != null) {
+            views.setImageViewBitmap(R.id.widget_background, localAlbumArt)
+            views.setInt(R.id.widget_background, "setColorFilter", android.graphics.Color.parseColor("#99000000"))
+            views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT)
         } else {
-            val parsedBgColor = Color.parseColor(prefs.getString("bg_color", "#FF000000") ?: "#FF000000")
-            views.setImageViewBitmap(R.id.widget_background, null)
+            val widgetBgHex = prefs.getString("widget_bg_color", "#FF000000") ?: "#FF000000"
+            var parsedBgColor = try {
+                android.graphics.Color.parseColor(widgetBgHex)
+            } catch (e: Exception) {
+                android.graphics.Color.BLACK
+            }
+
+            // --- Accent Color Override ---
+            if (useAccent && localAlbumArt != null) { // Now safely uses localAlbumArt
+                try {
+                    // Extract average color natively by scaling bitmap to 1x1
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(localAlbumArt, 1, 1, true)
+                    val accent = scaled.getPixel(0, 0)
+                    scaled.recycle()
+
+                    // Apply extracted color but keep the user's transparency preference
+                    val alpha = android.graphics.Color.alpha(parsedBgColor)
+                    parsedBgColor = android.graphics.Color.argb(
+                        alpha,
+                        android.graphics.Color.red(accent),
+                        android.graphics.Color.green(accent),
+                        android.graphics.Color.blue(accent)
+                    )
+                } catch (e: Exception) {}
+            }
+
+            // Load the rounded white shape as the image, and immediately tint it
+            views.setImageViewResource(R.id.widget_background, R.drawable.bg_widget_solid_rounded)
             views.setInt(R.id.widget_background, "setColorFilter", parsedBgColor)
+            views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT)
         }
+
+        // 3. Handle Text Colors (Apply the fading effect to match the new live preview)
+        val widgetTextHex = prefs.getString("widget_text_color", "#FFFFFFFF") ?: "#FFFFFFFF"
+        try {
+            val textBase = android.graphics.Color.parseColor(widgetTextHex)
+            val fade1 = android.graphics.Color.argb(170, android.graphics.Color.red(textBase), android.graphics.Color.green(textBase), android.graphics.Color.blue(textBase))
+            val fade2 = android.graphics.Color.argb(85, android.graphics.Color.red(textBase), android.graphics.Color.green(textBase), android.graphics.Color.blue(textBase))
+
+            views.setTextColor(R.id.widget_tv_prev2, fade2)
+            views.setTextColor(R.id.widget_tv_prev1, fade1)
+            views.setTextColor(R.id.widget_tv_current, textBase)
+            views.setTextColor(R.id.widget_tv_next1, fade1)
+            views.setTextColor(R.id.widget_tv_next2, fade2)
+        } catch (e: Exception) {}
 
         appWidgetManager.updateAppWidget(thisWidget, views)
     }

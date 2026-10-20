@@ -226,8 +226,11 @@ class MainActivity : AppCompatActivity() {
             widgetBgHex = "#FFFFFFFF"; widgetTextHex = "#FF000000"; etWidgetBg.setText(widgetBgHex); etWidgetText.setText(widgetTextHex); seekWidgetAlpha.progress = 255; updateWidgetPreview()
         }
         // Fixed: Replaced Album with Green
-        findViewById<Button>(R.id.btn_widget_theme_green).setOnClickListener {
-            widgetBgHex = "#FF1DB954"; widgetTextHex = "#FFFFFFFF"; etWidgetBg.setText(widgetBgHex); etWidgetText.setText(widgetTextHex); seekWidgetAlpha.progress = 255; updateWidgetPreview()
+        findViewById<Button>(R.id.btn_widget_theme_accent).setOnClickListener {
+            prefs.edit().putBoolean("pref_widget_accent_color", true).apply()
+            findViewById<SwitchCompat>(R.id.switch_widget_album_art).isChecked = false // Turn off the full image mode
+            Toast.makeText(this, "Accent Color Preset Applied!", Toast.LENGTH_SHORT).show()
+            sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
         }
 
         // --- 4. App Theme Customization ---
@@ -333,6 +336,7 @@ class MainActivity : AppCompatActivity() {
         floatBgHex = findViewById<EditText>(R.id.et_float_bg_color).text.toString().trim()
         floatTextHex = findViewById<EditText>(R.id.et_float_text_color).text.toString().trim()
         val lines = findViewById<SeekBar>(R.id.seek_float_lines).progress + 1
+        prefs.edit().putBoolean("pref_widget_accent_color", false).apply()
 
         prefs.edit().putString("bg_color", floatBgHex).putString("text_color", floatTextHex).putInt("pref_default_lines", lines).apply()
         sendBroadcast(Intent("UPDATE_COLORS").apply { setPackage(packageName) })
