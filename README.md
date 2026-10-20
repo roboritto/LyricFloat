@@ -5,12 +5,14 @@ An Android app that displays real-time, time-synced lyrics in a floating window 
 Built entirely with standard Android XML Views and Kotlin, Dynamic Lyrics leverages the free LRCLib API to provide instant, lightweight background synchronization without relying on heavy third-party UI libraries.
 
 <p align="center">
-  <img src="screenshots/app1.jpg" width="250" />
-  <img src="screenshots/app2.jpg" width="250" />
-  <img src="screenshots/lockscreen.jpg" width="250" />
-  <img src="screenshots/screen.jpg" width="250" />
-  <img src="screenshots/controlpanel.jpg" width="250" />
-  <img src="screenshots/notificationcenter.jpg" width="250" />
+  <img src="screenshots/App1.jpg" width="200" />
+  <img src="screenshots/App2.jpg" width="200" />
+  <img src="screenshots/Lock Screen.jpg" width="200" />
+  <img src="screenshots/Float.jpg" width="200" />
+  <img src="screenshots/Notification Panel.jpg" width="200" />
+  <img src="screenshots/Tile.jpg" width="200" />
+  <img src="screenshots/Widget Cover.jpg" width="200" />
+  <img src="screenshots/Widget Accent.jpg" width="200" />
 </p>
 
 ## 🌟 Features
