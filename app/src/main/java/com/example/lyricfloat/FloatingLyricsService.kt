@@ -43,6 +43,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlinx.coroutines.launch
 
 class FloatingLyricsService : Service() {
 
@@ -142,6 +143,10 @@ class FloatingLyricsService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("", "Waiting for music...", ""))
         isRunning = true
         requestTileUpdate()
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            LyricsCache.cleanupOldCache(this@FloatingLyricsService, maxDays = 30)
+        }
 
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -536,12 +541,24 @@ class FloatingLyricsService : Service() {
     private fun fetchLyrics(title: String, artist: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val finalLyrics = getBestLyrics(title, artist) { providerName -> setStatusText("Searching $providerName...") }
+                // 1. Check local cache first
+                var finalLyrics = LyricsCache.getLyrics(this@FloatingLyricsService, title, artist)
+
+                // 2. Fetch from network if not cached
+                if (finalLyrics.isNullOrEmpty()) {
+                    finalLyrics = getBestLyrics(title, artist) { providerName -> setStatusText("Searching $providerName...") }
+
+                    // Save to cache for offline/repeat playback
+                    if (!finalLyrics.isNullOrEmpty()) {
+                        LyricsCache.saveLyrics(this@FloatingLyricsService, title, artist, finalLyrics)
+                    }
+                }
+
                 if (!finalLyrics.isNullOrEmpty()) {
                     if (finalLyrics.contains("[00:")) {
                         val parsed = parseLrc(finalLyrics)
 
-                        // NEW: Fetch the album art before starting the timer
+                        // Fetch the album art before starting the sync timer
                         currentAlbumArt = fetchAlbumArt(title, artist)
 
                         withContext(Dispatchers.Main) {
