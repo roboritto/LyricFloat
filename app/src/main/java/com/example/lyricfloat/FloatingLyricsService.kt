@@ -1,4 +1,4 @@
-package com.example.lyricfloat // Verify this matches your exact app package
+package com.example.lyricfloat
 
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -8,9 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Color
-import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.IBinder
@@ -19,7 +17,6 @@ import android.service.quicksettings.TileService
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -28,7 +25,6 @@ import android.widget.RemoteViews
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,14 +32,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.appwidget.AppWidgetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import kotlinx.coroutines.launch
+import androidx.core.content.edit
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.scale
+import androidx.core.graphics.get
+import androidx.core.graphics.createBitmap
+import kotlin.time.Duration.Companion.milliseconds
 
 class FloatingLyricsService : Service() {
 
@@ -120,7 +120,6 @@ class FloatingLyricsService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             applyCustomColors()
 
-            // NEW: Force the widget to redraw with the new colors immediately
             val widgetIntent = Intent(this@FloatingLyricsService, LyricsWidgetProvider::class.java).apply {
                 action = "UPDATE_COLORS"
             }
@@ -130,6 +129,7 @@ class FloatingLyricsService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @SuppressLint("InflateParams", "ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
 
@@ -195,7 +195,7 @@ class FloatingLyricsService : Service() {
             val expandHandle = floatingView.findViewById<android.widget.ImageView>(R.id.resize_handle)
             var initialLines = 3
             var expandInitialTouchY = 0f
-            val dragThresholdPx = 100f // Lowered back down for smoother response
+            val dragThresholdPx = 100f
 
             expandHandle.setOnTouchListener { _, event ->
                 when (event.action) {
@@ -216,7 +216,7 @@ class FloatingLyricsService : Service() {
 
                         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
                         if (prefs.getInt("pref_default_lines", 3) != newLines) {
-                            prefs.edit().putInt("pref_default_lines", newLines).apply()
+                            prefs.edit { putInt("pref_default_lines", newLines) }
                             applyDisplayPreferences() // This will now ONLY update the local UI
                         }
                         true
@@ -294,6 +294,7 @@ class FloatingLyricsService : Service() {
         scrollResetHandler.postDelayed(scrollResetRunnable, 4000)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupGestureControls() {
         var initialX = 0
         var initialY = 0
@@ -403,7 +404,7 @@ class FloatingLyricsService : Service() {
                         } else if (tapCount == 3) {
                             // Hide the box instead of killing the service
                             val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
-                            prefs.edit().putBoolean("pref_floating_box", false).apply()
+                            prefs.edit { putBoolean("pref_floating_box", false) }
                             sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
                             Toast.makeText(this@FloatingLyricsService, "Floating Box Hidden", Toast.LENGTH_SHORT).show()
                         }
@@ -462,17 +463,16 @@ class FloatingLyricsService : Service() {
         val useAlbumArt = prefs.getBoolean("pref_widget_album_art", true)
         val useAccent = prefs.getBoolean("pref_widget_accent_color", false)
 
-        // --- FIX: Capture the mutable property into a local, constant variable ---
         val localAlbumArt = currentAlbumArt
 
         if (useAlbumArt && localAlbumArt != null) {
             views.setImageViewBitmap(R.id.widget_background, localAlbumArt)
-            views.setInt(R.id.widget_background, "setColorFilter", android.graphics.Color.parseColor("#99000000"))
+            views.setInt(R.id.widget_background, "setColorFilter", "#99000000".toColorInt())
             views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT)
         } else {
             val widgetBgHex = prefs.getString("widget_bg_color", "#FF000000") ?: "#FF000000"
             var parsedBgColor = try {
-                android.graphics.Color.parseColor(widgetBgHex)
+                widgetBgHex.toColorInt()
             } catch (e: Exception) {
                 android.graphics.Color.BLACK
             }
@@ -481,8 +481,8 @@ class FloatingLyricsService : Service() {
             if (useAccent && localAlbumArt != null) { // Now safely uses localAlbumArt
                 try {
                     // Extract average color natively by scaling bitmap to 1x1
-                    val scaled = android.graphics.Bitmap.createScaledBitmap(localAlbumArt, 1, 1, true)
-                    val accent = scaled.getPixel(0, 0)
+                    val scaled = localAlbumArt.scale(1, 1)
+                    val accent = scaled[0, 0]
                     scaled.recycle()
 
                     // Apply extracted color but keep the user's transparency preference
@@ -505,7 +505,7 @@ class FloatingLyricsService : Service() {
         // 3. Handle Text Colors (Apply the fading effect to match the new live preview)
         val widgetTextHex = prefs.getString("widget_text_color", "#FFFFFFFF") ?: "#FFFFFFFF"
         try {
-            val textBase = android.graphics.Color.parseColor(widgetTextHex)
+            val textBase = widgetTextHex.toColorInt()
             val fade1 = android.graphics.Color.argb(170, android.graphics.Color.red(textBase), android.graphics.Color.green(textBase), android.graphics.Color.blue(textBase))
             val fade2 = android.graphics.Color.argb(85, android.graphics.Color.red(textBase), android.graphics.Color.green(textBase), android.graphics.Color.blue(textBase))
 
@@ -588,7 +588,7 @@ class FloatingLyricsService : Service() {
 
     private fun parseLrc(lrc: String): List<LyricLine> {
         val lines = mutableListOf<LyricLine>()
-        val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})\\](.*)")
+        val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})](.*)")
         lrc.lines().forEach { line ->
             val match = regex.find(line)
             if (match != null) {
@@ -603,6 +603,7 @@ class FloatingLyricsService : Service() {
         return lines.sortedBy { it.timeMs }
     }
 
+    @SuppressLint("SetTextI18n")
     private fun startSyncTimer() {
         syncJob?.cancel()
         if (!isMusicPlaying || parsedLyrics.isEmpty()) return
@@ -684,12 +685,12 @@ class FloatingLyricsService : Service() {
                         val wPrev1 = prevText // Reuse the already calculated string
                         val wCurr = currentText // Reuse the already calculated string
                         val wNext1 = nextText // Reuse the already calculated string
-                        val wNext2 = if (currentIndex >= -1 && currentIndex < parsedLyrics.size - 2) parsedLyrics[currentIndex + 2].text else ""
+                        val wNext2 = if (currentIndex < parsedLyrics.size - 2) parsedLyrics[currentIndex + 2].text else ""
 
                         updateHomeScreenWidget(wPrev2, wPrev1, wCurr, wNext1, wNext2)
                     }
                 }
-                delay(100)
+                delay(100.milliseconds)
             }
         }
     }
@@ -725,7 +726,8 @@ class FloatingLyricsService : Service() {
         if (!::floatingView.isInitialized) return
         val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
         try {
-            val parsedBgColor = Color.parseColor(prefs.getString("bg_color", "#FF000000") ?: "#FF000000")
+            val parsedBgColor =
+                (prefs.getString("bg_color", "#FF000000") ?: "#FF000000").toColorInt()
 
             val backgroundShape = GradientDrawable()
             backgroundShape.shape = GradientDrawable.RECTANGLE
@@ -736,10 +738,8 @@ class FloatingLyricsService : Service() {
         } catch (e: Exception) { }
     }
 
-    // Add this near your other state variables (like currentLyricIndex)
     private var currentAlbumArt: Bitmap? = null
 
-    // Add this helper function inside the class
     private suspend fun fetchAlbumArt(track: String, artist: String): Bitmap? {
         return withContext(Dispatchers.IO) {
             try {
@@ -776,7 +776,7 @@ class FloatingLyricsService : Service() {
         val targetWidth = 800
         val targetHeight = 400
 
-        val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val output = createBitmap(targetWidth, targetHeight)
         val canvas = android.graphics.Canvas(output)
 
         // Calculate how much to scale and shift the image to perfectly center it

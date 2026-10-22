@@ -1,4 +1,4 @@
-package com.example.lyricfloat // Verify this matches your app package
+package com.example.lyricfloat
 
 import android.app.Notification
 import android.content.BroadcastReceiver
@@ -67,7 +67,6 @@ class MediaListenerService : NotificationListenerService() {
                 }
             }
         } catch (e: Exception) {
-            // Ignore if it fails to fetch notifications
         }
     }
 

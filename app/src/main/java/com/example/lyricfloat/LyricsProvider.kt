@@ -1,5 +1,7 @@
-package com.example.lyricfloat // Ensure this matches your project's package name
+package com.example.lyricfloat
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -15,11 +17,17 @@ class LrcLibProvider : LyricsProvider {
 
     override suspend fun fetchLyrics(trackName: String, artistName: String): String? {
         return try {
-            val encodedTrack = URLEncoder.encode(trackName, "UTF-8")
-            val encodedArtist = URLEncoder.encode(artistName, "UTF-8")
+            val encodedTrack = withContext(Dispatchers.IO) {
+                URLEncoder.encode(trackName, "UTF-8")
+            }
+            val encodedArtist = withContext(Dispatchers.IO) {
+                URLEncoder.encode(artistName, "UTF-8")
+            }
             val urlString = "https://lrclib.net/api/get?track_name=$encodedTrack&artist_name=$encodedArtist"
 
-            val connection = URL(urlString).openConnection() as HttpURLConnection
+            val connection = withContext(Dispatchers.IO) {
+                URL(urlString).openConnection()
+            } as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 5000
 
@@ -42,11 +50,17 @@ class UnisonProvider : LyricsProvider {
 
     override suspend fun fetchLyrics(trackName: String, artistName: String): String? {
         return try {
-            val encodedTrack = URLEncoder.encode(trackName, "UTF-8")
-            val encodedArtist = URLEncoder.encode(artistName, "UTF-8")
+            val encodedTrack = withContext(Dispatchers.IO) {
+                URLEncoder.encode(trackName, "UTF-8")
+            }
+            val encodedArtist = withContext(Dispatchers.IO) {
+                URLEncoder.encode(artistName, "UTF-8")
+            }
             val urlString = "https://unison.betterlyrics.org/lyrics?song=$encodedTrack&artist=$encodedArtist"
 
-            val connection = URL(urlString).openConnection() as HttpURLConnection
+            val connection = withContext(Dispatchers.IO) {
+                URL(urlString).openConnection()
+            } as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 5000
 
@@ -69,10 +83,14 @@ class YouTubeCaptionProvider : LyricsProvider {
 
     override suspend fun fetchLyrics(trackName: String, artistName: String): String? {
         return try {
-            val query = URLEncoder.encode("$trackName $artistName audio", "UTF-8")
+            val query = withContext(Dispatchers.IO) {
+                URLEncoder.encode("$trackName $artistName audio", "UTF-8")
+            }
             val searchUrl = "https://pipedapi.kavin.rocks/search?q=$query&filter=all"
 
-            val searchConn = URL(searchUrl).openConnection() as HttpURLConnection
+            val searchConn = withContext(Dispatchers.IO) {
+                URL(searchUrl).openConnection()
+            } as HttpURLConnection
             searchConn.requestMethod = "GET"
             searchConn.connectTimeout = 5000
 
@@ -88,7 +106,9 @@ class YouTubeCaptionProvider : LyricsProvider {
             val videoId = videoUrl.replace("/watch?v=", "")
 
             val streamUrl = "https://pipedapi.kavin.rocks/streams/$videoId"
-            val streamConn = URL(streamUrl).openConnection() as HttpURLConnection
+            val streamConn = withContext(Dispatchers.IO) {
+                URL(streamUrl).openConnection()
+            } as HttpURLConnection
             streamConn.requestMethod = "GET"
 
             if (streamConn.responseCode != 200) return null
@@ -112,7 +132,9 @@ class YouTubeCaptionProvider : LyricsProvider {
                 subUrl = subtitles.getJSONObject(0).getString("url")
             }
 
-            val subDataConn = URL(subUrl).openConnection() as HttpURLConnection
+            val subDataConn = withContext(Dispatchers.IO) {
+                URL(subUrl).openConnection()
+            } as HttpURLConnection
             val vttText = subDataConn.inputStream.bufferedReader().use { it.readText() }
 
             return convertVttToLrc(vttText)

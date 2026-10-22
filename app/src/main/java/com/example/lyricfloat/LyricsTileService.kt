@@ -1,9 +1,10 @@
-package com.example.lyricfloat // Verify this matches your app package
+package com.example.lyricfloat
 
 import android.content.Context
 import android.content.Intent
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.edit
 
 class LyricsTileService : TileService() {
 
@@ -19,7 +20,7 @@ class LyricsTileService : TileService() {
         val isBoxVisible = prefs.getBoolean("pref_floating_box", true)
 
         // Toggle the floating box preference
-        prefs.edit().putBoolean("pref_floating_box", !isBoxVisible).apply()
+        prefs.edit { putBoolean("pref_floating_box", !isBoxVisible) }
 
         // Tell the background service to update its views
         sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
@@ -37,7 +38,7 @@ class LyricsTileService : TileService() {
             if (isBoxVisible) {
                 tile.state = Tile.STATE_ACTIVE
                 tile.label = "Float On"
-                tile.subtitle = "" // Clear the subtitle so it doesn't stack
+                tile.subtitle = ""
             } else {
                 tile.state = Tile.STATE_INACTIVE
                 tile.label = "Float Off"

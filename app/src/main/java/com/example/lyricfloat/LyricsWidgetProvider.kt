@@ -1,4 +1,4 @@
-package com.example.lyricfloat // Verify this matches your app
+package com.example.lyricfloat
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.widget.RemoteViews
+import androidx.core.graphics.toColorInt
 
 class LyricsWidgetProvider : AppWidgetProvider() {
 
@@ -23,8 +24,8 @@ class LyricsWidgetProvider : AppWidgetProvider() {
             var parsedBgColor = Color.BLACK
             var parsedTextColor = Color.WHITE
             try {
-                parsedBgColor = Color.parseColor(bgHex)
-                parsedTextColor = Color.parseColor(textHex)
+                parsedBgColor = bgHex.toColorInt()
+                parsedTextColor = textHex.toColorInt()
             } catch (e: Exception) {}
 
             val semiTransparentTextColor = Color.argb(128, Color.red(parsedTextColor), Color.green(parsedTextColor), Color.blue(parsedTextColor))

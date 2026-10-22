@@ -1,4 +1,4 @@
-package com.example.lyricfloat // Ensure this matches your package name
+package com.example.lyricfloat
 
 import android.content.Context
 import android.content.Intent
@@ -17,6 +17,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import com.skydoves.colorpickerview.ColorPickerDialog
 import com.skydoves.colorpickerview.listeners.ColorEnvelopeListener
+import androidx.core.content.edit
+import androidx.core.graphics.toColorInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -77,12 +79,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val displayToggleListener = { _: View?, _: Boolean ->
-            prefs.edit().apply {
+            prefs.edit {
                 putBoolean("pref_floating_box", switchFloating.isChecked)
                 putBoolean("pref_notification", switchNotif.isChecked)
                 putBoolean("pref_lock_screen", switchLock.isChecked)
                 putBoolean("pref_widget_album_art", switchWidgetArt.isChecked)
-            }.apply()
+            }
             sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
         }
 
@@ -227,7 +229,7 @@ class MainActivity : AppCompatActivity() {
         }
         // Fixed: Replaced Album with Green
         findViewById<Button>(R.id.btn_widget_theme_accent).setOnClickListener {
-            prefs.edit().putBoolean("pref_widget_accent_color", true).apply()
+            prefs.edit { putBoolean("pref_widget_accent_color", true) }
             findViewById<SwitchCompat>(R.id.switch_widget_album_art).isChecked = false // Turn off the full image mode
             Toast.makeText(this, "Accent Color Preset Applied!", Toast.LENGTH_SHORT).show()
             sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
@@ -261,7 +263,10 @@ class MainActivity : AppCompatActivity() {
             appCardHex = etAppCard.text.toString().trim()
             appTextHex = etAppText.text.toString().trim()
 
-            prefs.edit().putString("app_bg_color", appBgHex).putString("app_card_color", appCardHex).putString("app_text_color", appTextHex).apply()
+            prefs.edit {
+                putString("app_bg_color", appBgHex).putString("app_card_color", appCardHex)
+                    .putString("app_text_color", appTextHex)
+            }
             applyAppThemeColors()
             Toast.makeText(this, "App Theme applied!", Toast.LENGTH_SHORT).show()
         }
@@ -277,18 +282,16 @@ class MainActivity : AppCompatActivity() {
             appBgHex = "#F0F0F0"; appCardHex = "#FFFFFF"; appTextHex = "#000000"; etAppBg.setText(appBgHex); etAppCard.setText(appCardHex); etAppText.setText(appTextHex)
         }
 
-        // Initial UI Draw
         updateFloatPreview()
         updateWidgetPreview()
     }
 
     // --- Core Theming Logic ---
-
     private fun applyAppThemeColors() {
         try {
-            val bg = Color.parseColor(appBgHex)
-            val card = Color.parseColor(appCardHex)
-            val text = Color.parseColor(appTextHex)
+            val bg = appBgHex.toColorInt()
+            val card = appCardHex.toColorInt()
+            val text = appTextHex.toColorInt()
 
             // Calculate a contrasting text color for the rounded apply buttons so they are always readable
             val btnTextColor = if (1 - (0.299 * Color.red(card) + 0.587 * Color.green(card) + 0.114 * Color.blue(card)) / 255 >= 0.5) Color.WHITE else Color.BLACK
@@ -336,9 +339,12 @@ class MainActivity : AppCompatActivity() {
         floatBgHex = findViewById<EditText>(R.id.et_float_bg_color).text.toString().trim()
         floatTextHex = findViewById<EditText>(R.id.et_float_text_color).text.toString().trim()
         val lines = findViewById<SeekBar>(R.id.seek_float_lines).progress + 1
-        prefs.edit().putBoolean("pref_widget_accent_color", false).apply()
+        prefs.edit { putBoolean("pref_widget_accent_color", false) }
 
-        prefs.edit().putString("bg_color", floatBgHex).putString("text_color", floatTextHex).putInt("pref_default_lines", lines).apply()
+        prefs.edit {
+            putString("bg_color", floatBgHex).putString("text_color", floatTextHex)
+                .putInt("pref_default_lines", lines)
+        }
         sendBroadcast(Intent("UPDATE_COLORS").apply { setPackage(packageName) })
         sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
     }
@@ -348,14 +354,19 @@ class MainActivity : AppCompatActivity() {
         widgetTextHex = findViewById<EditText>(R.id.et_widget_text_color).text.toString().trim()
         val lines = findViewById<SeekBar>(R.id.seek_widget_lines).progress + 1
 
-        prefs.edit().putString("widget_bg_color", widgetBgHex).putString("widget_text_color", widgetTextHex).putInt("widget_default_lines", lines).apply()
+        prefs.edit {
+            putString("widget_bg_color", widgetBgHex).putString(
+                "widget_text_color",
+                widgetTextHex
+            ).putInt("widget_default_lines", lines)
+        }
         sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
     }
 
     private fun updateFloatPreview() {
         try {
-            val bg = Color.parseColor(floatBgHex)
-            val text = Color.parseColor(floatTextHex)
+            val bg = floatBgHex.toColorInt()
+            val text = floatTextHex.toColorInt()
             val fade1 = Color.argb(170, Color.red(text), Color.green(text), Color.blue(text))
             val fade2 = Color.argb(85, Color.red(text), Color.green(text), Color.blue(text))
             val lines = findViewById<SeekBar>(R.id.seek_float_lines).progress + 1
@@ -373,8 +384,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateWidgetPreview() {
         try {
-            val bg = Color.parseColor(widgetBgHex)
-            val text = Color.parseColor(widgetTextHex)
+            val bg = widgetBgHex.toColorInt()
+            val text = widgetTextHex.toColorInt()
             val fade1 = Color.argb(170, Color.red(text), Color.green(text), Color.blue(text))
             val fade2 = Color.argb(85, Color.red(text), Color.green(text), Color.blue(text))
             val lines = findViewById<SeekBar>(R.id.seek_widget_lines).progress + 1

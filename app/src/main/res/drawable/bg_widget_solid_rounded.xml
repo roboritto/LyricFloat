@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Solid white base so we can safely tint it to any custom hex color -->
     <solid android:color="#FFFFFF" />
-    <!-- Adjust this radius to match your album art's corner curve -->
     <corners android:radius="24dp" />
 </shape>

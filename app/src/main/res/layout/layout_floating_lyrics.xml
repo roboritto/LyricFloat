@@ -28,7 +28,6 @@
             android:contentDescription="Drag Handle" />
     </LinearLayout>
 
-    <!-- Dynamic Lyrics (Takes up remaining space) -->
     <TextView
         android:id="@+id/tv_dynamic_lyrics"
         android:layout_width="0dp"
