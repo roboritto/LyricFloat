@@ -824,7 +824,7 @@ class FloatingLyricsService : Service() {
         watchdogJob?.cancel()
         watchdogJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
-                delay(3000L) // Run checks every 3 seconds
+                delay(3000L.milliseconds) // Run checks every 3 seconds
 
                 // 1. Ping the media listener to catch "stealth" scrubs and track restarts
                 if (isMusicPlaying) {
