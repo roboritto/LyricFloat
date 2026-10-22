@@ -23,7 +23,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.RemoteViews
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -247,7 +246,6 @@ class FloatingLyricsService : Service() {
             }, 300)
 
         } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "CRASH: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -400,13 +398,11 @@ class FloatingLyricsService : Service() {
                             floatingParams.x = 0
                             floatingParams.y = 0
                             if (isFloatingViewAttached) windowManager.updateViewLayout(floatingView, floatingParams)
-                            Toast.makeText(this@FloatingLyricsService, "Position reset", Toast.LENGTH_SHORT).show()
                         } else if (tapCount == 3) {
                             // Hide the box instead of killing the service
                             val prefs = getSharedPreferences("LyricsPrefs", Context.MODE_PRIVATE)
                             prefs.edit { putBoolean("pref_floating_box", false) }
                             sendBroadcast(Intent("UPDATE_DISPLAY_PREFS").apply { setPackage(packageName) })
-                            Toast.makeText(this@FloatingLyricsService, "Floating Box Hidden", Toast.LENGTH_SHORT).show()
                         }
                     }
                     true
