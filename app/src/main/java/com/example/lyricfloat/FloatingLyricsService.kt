@@ -75,6 +75,10 @@ class FloatingLyricsService : Service() {
     private var isMusicPlaying = false
     private var lastUpdateTime = 0L
     private var currentTrackName = ""
+    private var currentArtistName: String = ""
+    private var watchdogJob: Job? = null
+    private var lastFetchAttemptTime = 0L
+    private var isFetchingLyrics = false
 
     private val lyricsSources: List<LyricsProvider> = listOf(
         LrcLibProvider(),
@@ -94,6 +98,7 @@ class FloatingLyricsService : Service() {
             if (trackName != null) {
                 if (trackName != currentTrackName) {
                     currentTrackName = trackName
+                    currentArtistName = artistName ?: ""
                     syncJob?.cancel()
                     parsedLyrics = emptyList()
                     currentLyricIndex = -2
@@ -131,7 +136,7 @@ class FloatingLyricsService : Service() {
     @SuppressLint("InflateParams", "ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
-
+        startWatchdog()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(CHANNEL_ID, "Lock Screen Lyrics", NotificationManager.IMPORTANCE_DEFAULT).apply {
             setSound(null, null)
@@ -431,6 +436,7 @@ class FloatingLyricsService : Service() {
         if (isFloatingViewAttached) {
             windowManager.removeView(floatingView)
         }
+        watchdogJob?.cancel()
     }
 
     private fun requestTileUpdate() {
@@ -535,6 +541,10 @@ class FloatingLyricsService : Service() {
     }
 
     private fun fetchLyrics(title: String, artist: String) {
+        if (isFetchingLyrics) return
+        isFetchingLyrics = true
+        lastFetchAttemptTime = System.currentTimeMillis()
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // 1. Check local cache first
@@ -578,6 +588,8 @@ class FloatingLyricsService : Service() {
                     parsedLyrics = emptyList()
                     setStatusText("Network error or API down.")
                 }
+            } finally {
+                isFetchingLyrics = false
             }
         }
     }
@@ -602,7 +614,12 @@ class FloatingLyricsService : Service() {
     @SuppressLint("SetTextI18n")
     private fun startSyncTimer() {
         syncJob?.cancel()
-        if (!isMusicPlaying || parsedLyrics.isEmpty()) return
+        if (!isMusicPlaying || parsedLyrics.isEmpty()) {
+            syncJob?.cancel()
+            return
+        }
+
+        if (syncJob?.isActive == true) return
 
         syncJob = CoroutineScope(Dispatchers.Main).launch {
             while (isActive) {
@@ -801,5 +818,32 @@ class FloatingLyricsService : Service() {
         canvas.drawBitmap(bitmap, matrix, paint)
 
         return output
+    }
+
+    private fun startWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                delay(3000L) // Run checks every 3 seconds
+
+                // 1. Ping the media listener to catch "stealth" scrubs and track restarts
+                if (isMusicPlaying) {
+                    sendBroadcast(Intent("REQUEST_CURRENT_TRACK").apply { setPackage(packageName) })
+                }
+
+                // 2. Retry fetching if offline earlier and music is still playing
+                if (parsedLyrics.isEmpty() && currentTrackName.isNotBlank() && isMusicPlaying && !isFetchingLyrics) {
+                    if (System.currentTimeMillis() - lastFetchAttemptTime > 15000L) {
+                        withContext(Dispatchers.Main) { setStatusText("Retrying fetch...") }
+                        fetchLyrics(currentTrackName, currentArtistName)
+                    }
+                }
+
+                // 3. Reboot the timer if it randomly died
+                if (isMusicPlaying && parsedLyrics.isNotEmpty() && syncJob?.isActive != true) {
+                    withContext(Dispatchers.Main) { startSyncTimer() }
+                }
+            }
+        }
     }
 }
